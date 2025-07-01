@@ -1,0 +1,75 @@
+[
+  {
+    "category": "Pre Production",
+    "totalAmount": 1205000,
+    "items": [
+      { "slNo": 1, "particulars": "Office Expenses", "cost": 15000, "unit": 8, "amount": 120000, "numberOfPeople": 8 },
+      { "slNo": 2, "particulars": "Stationary", "cost": 10000, "unit": 2, "amount": 20000, "numberOfPeople": 2 },
+      { "slNo": 3, "particulars": "Printer", "cost": 15000, "unit": 1, "amount": 15000, "numberOfPeople": 1 },
+      { "slNo": 4, "particulars": "Poster Designer", "cost": 150000, "unit": 1, "amount": 150000, "numberOfPeople": 1 },
+      { "slNo": 5, "particulars": "Final Reckie", "cost": 50000, "unit": 1, "amount": 50000, "numberOfPeople": 1 },
+      { "slNo": 6, "particulars": "Photoshoot", "cost": 100000, "unit": 1, "amount": 100000, "numberOfPeople": 1 },
+      { "slNo": 7, "particulars": "Costume", "cost": 300000, "unit": 1, "amount": 300000, "numberOfPeople": 1 },
+      { "slNo": 8, "particulars": "Properties", "cost": 300000, "unit": 1, "amount": 300000, "numberOfPeople": 1 },
+      { "slNo": 9, "particulars": "Colour Pallet", "cost": 150000, "unit": 1, "amount": 150000, "numberOfPeople": 1 }
+    ]
+  },
+  {
+    "category": "Production",
+    "totalAmount": 13235700,
+    "items": [
+      { "slNo": 10, "particulars": "Camera", "cost": 32000, "unit": 60, "amount": 1920000 },
+      { "slNo": 11, "particulars": "Camera Assistants", "cost": 8500, "unit": 62, "amount": 527000, "numberOfPeople": 4 },
+      { "slNo": 12, "particulars": "Unit", "cost": 11750, "unit": 61, "amount": 716750 },
+      { "slNo": 13, "particulars": "Disel", "cost": 10000, "unit": 60, "amount": 600000 },
+      { "slNo": 14, "particulars": "Transportation", "cost": 10000, "unit": 60, "amount": 600000 },
+      { "slNo": 15, "particulars": "Manager", "cost": 250000, "unit": 1, "amount": 250000 },
+      { "slNo": 16, "particulars": "Production Officers", "cost": 8225, "unit": 62, "amount": 509950, "numberOfPeople": 7 },
+      { "slNo": 17, "particulars": "Food", "cost": 18000, "unit": 60, "amount": 1080000 },
+      { "slNo": 18, "particulars": "Art", "cost": 9000, "unit": 60, "amount": 540000, "numberOfPeople": 4 },
+      { "slNo": 19, "particulars": "Set Properties", "cost": 5000, "unit": 60, "amount": 300000 },
+      { "slNo": 20, "particulars": "Costumers", "cost": 8700, "unit": 60, "amount": 522000, "numberOfPeople": 3 },
+      { "slNo": 21, "particulars": "Make-up", "cost": 9000, "unit": 60, "amount": 540000, "numberOfPeople": 3 },
+      { "slNo": 22, "particulars": "Crane", "cost": 8000, "unit": 25, "amount": 200000 },
+      { "slNo": 23, "particulars": "Light Officers", "cost": 12000, "unit": 60, "amount": 720000 },
+      { "slNo": 24, "particulars": "Making", "cost": 3000, "unit": 60, "amount": 180000 },
+      { "slNo": 25, "particulars": "Online Editor", "cost": 4000, "unit": 60, "amount": 240000 },
+      { "slNo": 26, "particulars": "Accomodation", "cost": 1800000, "unit": 1, "amount": 1800000 },
+      { "slNo": 27, "particulars": "Sound", "cost": 1500, "unit": 60, "amount": 90000 },
+      { "slNo": 28, "particulars": "Misl Expences", "cost": 15000, "unit": 60, "amount": 900000 },
+      { "slNo": 29, "particulars": "Climak Shoot", "cost": 1000000, "unit": 1, "amount": 1000000 }
+    ]
+  },
+  {
+    "category": "Post Production",
+    "totalAmount": 5200000,
+    "items": [
+      { "slNo": 30, "particulars": "Editing", "cost": 1000000, "unit": 1, "amount": 1000000 },
+      { "slNo": 31, "particulars": "Dubbing", "cost": 600000, "unit": 1, "amount": 600000 },
+      { "slNo": 32, "particulars": "Foley", "cost": 600000, "unit": 1, "amount": 600000 },
+      { "slNo": 33, "particulars": "Dts", "cost": 2500000, "unit": 1, "amount": 2500000 },
+      { "slNo": 34, "particulars": "Music+singer+lyrics", "cost": 2500000, "unit": 1, "amount": 2500000 },
+      { "slNo": 35, "particulars": "Di", "cost": 250000, "unit": 1, "amount": 250000 },
+      { "slNo": 36, "particulars": "VFX", "cost": 250000, "unit": 1, "amount": 250000 },
+      { "slNo": 37, "particulars": "CG", "cost": 250000, "unit": 1, "amount": 250000 },
+      { "slNo": 38, "particulars": "Subtitles", "cost": 50000, "unit": 1, "amount": 50000 },
+      { "slNo": 39, "particulars": "HDD", "cost": 300000, "unit": 1, "amount": 300000 }
+    ]
+  },
+  {
+    "category": "Remuneration",
+    "totalAmount": 9860001,
+    "items": [
+      { "slNo": 40, "particulars": "Director", "cost": 2100000, "unit": 1, "amount": 2100000 },
+      { "slNo": 41, "particulars": "Direction Department", "cost": 810000, "unit": 1, "amount": 810000 },
+      { "slNo": 42, "particulars": "DOP", "cost": 1300001, "unit": 1, "amount": 1300001 },
+      { "slNo": 43, "particulars": "Dop Department", "cost": 500000, "unit": 1, "amount": 500000 },
+      { "slNo": 44, "particulars": "Boys Lead", "cost": 0, "unit": 1, "amount": 0 },
+      { "slNo": 45, "particulars": "Boys Team", "cost": 800000, "unit": 1, "amount": 800000 },
+      { "slNo": 46, "particulars": "Transgender Team", "cost": 200000, "unit": 6, "amount": 1200000 },
+      { "slNo": 47, "particulars": "Other Characters", "cost": 1000000, "unit": 1, "amount": 1000000 },
+      { "slNo": 48, "particulars": "Costume Chief", "cost": 150000, "unit": 1, "amount": 150000 },
+      { "slNo": 49, "particulars": "Juniors", "cost": 2000000, "unit": 1, "amount": 2000000 }
+    ]
+  }
+]
