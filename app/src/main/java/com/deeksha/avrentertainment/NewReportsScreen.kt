@@ -196,8 +196,8 @@ fun NewReportsScreen(
             // Department filter
             val departmentMatch = selectedDepartment == "All Departments" || expense.department == selectedDepartment
             
-            // Project filter - only show expenses for the specific project
-            val projectMatch = expense.projectId == projectId
+            // Project filter - if "ALL_PROJECTS", show all; otherwise filter by specific project
+            val projectMatch = projectId == "ALL_PROJECTS" || expense.projectId == projectId
             
             dateMatch && departmentMatch && projectMatch
         }
@@ -211,42 +211,79 @@ fun NewReportsScreen(
         totalBudget = projectsToConsider.sumOf { it.budget }
         totalSpent = approvedExpenses.sumOf { it.amount }
         
-        // Calculate department analytics
+        // Calculate department analytics using actual project department allocations
         val departmentGroups = approvedExpenses.groupBy { it.department }
         val departmentBudgetMap = mutableMapOf<String, Double>()
         
-        // Calculate budget allocation per department
+        // Use actual department allocations from project, fallback to proportional allocation
         projectsToConsider.forEach { project ->
-            val deptBudget = project.budget / 5.0 // Equal split among 5 departments
-            listOf("Art", "Camera", "Costumes", "Other", "Sound").forEach { dept ->
-                departmentBudgetMap[dept] = (departmentBudgetMap[dept] ?: 0.0) + deptBudget
+            if (project.departmentAllocations.isNotEmpty()) {
+                // Use project-specific department allocations
+                project.departmentAllocations.forEach { (dept, budget) ->
+                    departmentBudgetMap[dept] = (departmentBudgetMap[dept] ?: 0.0) + budget
+                }
+            } else {
+                // Fallback: Smart allocation based on actual spending patterns + buffer
+                val totalSpent = departmentGroups.values.sumOf { expenses -> 
+                    expenses.sumOf { it.amount } 
+                }
+                
+                if (totalSpent > 0) {
+                    // Allocate budget proportionally to actual spending with minimum buffers
+                    departmentGroups.forEach { (dept, expenses) ->
+                        val deptSpent = expenses.sumOf { it.amount }
+                        val proportionalBudget = (deptSpent / totalSpent) * project.budget
+                        val bufferBudget = deptSpent * 0.3 // 30% buffer for future expenses
+                        val allocatedBudget = maxOf(proportionalBudget, deptSpent + bufferBudget)
+                        departmentBudgetMap[dept] = (departmentBudgetMap[dept] ?: 0.0) + allocatedBudget
+                    }
+                } else {
+                    // If no expenses yet, create default allocation for common departments
+                    val commonDepartments = listOf("Art", "Camera", "Costumes", "Sound", "Other")
+                    val defaultAllocation = project.budget / commonDepartments.size
+                    commonDepartments.forEach { dept ->
+                        departmentBudgetMap[dept] = (departmentBudgetMap[dept] ?: 0.0) + defaultAllocation
+                    }
+                }
             }
         }
         
-        departmentAnalytics = departmentGroups.map { (dept, expenses) ->
+        // Ensure all departments with expenses or budgets are included
+        val allDepartments = (departmentGroups.keys + departmentBudgetMap.keys).distinct()
+        
+        departmentAnalytics = allDepartments.map { dept ->
+            val expenses = departmentGroups[dept] ?: emptyList()
             val spent = expenses.sumOf { it.amount }
             val budget = departmentBudgetMap[dept] ?: 0.0
-            val utilizationPercentage = if (budget > 0) (spent / budget) * 100 else 0.0
+            
+            // If there's spending but no budget allocation, create a reasonable budget estimate
+            val effectiveBudget = if (budget == 0.0 && spent > 0) {
+                spent * 1.5 // 50% buffer for departments with spending but no allocated budget
+            } else {
+                budget
+            }
+            
+            val utilizationPercentage = if (effectiveBudget > 0) (spent / effectiveBudget) * 100 else 0.0
             
             DepartmentAnalytics(
                 name = dept,
                 totalSpent = spent,
-                totalBudget = budget,
+                totalBudget = effectiveBudget,
                 expenseCount = expenses.size,
                 averageExpense = if (expenses.isNotEmpty()) spent / expenses.size else 0.0,
                 utilizationPercentage = utilizationPercentage
             )
-        }.sortedByDescending { it.totalSpent }
+        }.filter { it.totalSpent > 0 || it.totalBudget > 0 } // Only show departments with activity
+         .sortedByDescending { it.totalSpent }
         
-        // Create budget overview data
-        budgetOverviewData = departmentBudgetMap.map { (dept, budget) ->
-            val spent = departmentGroups[dept]?.sumOf { it.amount } ?: 0.0
-            val percentage = if (budget > 0) (spent / budget) * 100 else 0.0
+        // Create budget overview data using the same department analytics for consistency
+        budgetOverviewData = departmentAnalytics.map { analytics ->
+            val percentage = if (analytics.totalBudget > 0) (analytics.totalSpent / analytics.totalBudget) * 100 else 0.0
             
             BudgetOverviewItem(
-                department = dept,
-                budget = budget,
-                spent = spent,
+                department = analytics.name,
+                budget = analytics.totalBudget,
+                spent = analytics.totalSpent,
                 percentage = percentage
             )
         }.sortedByDescending { it.spent }
@@ -261,7 +298,7 @@ fun NewReportsScreen(
         TopAppBar(
             title = {
                 Text(
-                    "Reports",
+                    if (projectId == "ALL_PROJECTS") "All Projects Report" else "Reports",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp
@@ -652,7 +689,7 @@ fun NewReportsScreen(
                                         filters = ReportFilters(
                                             dateRange = selectedDateRange,
                                             department = selectedDepartment,
-                                            project = allProjects.find { it.id == projectId }?.name ?: "Unknown Project"
+                                            project = if (projectId == "ALL_PROJECTS") "All Projects" else (allProjects.find { it.id == projectId }?.name ?: "Unknown Project")
                                         )
                                     )
                                     
@@ -704,7 +741,7 @@ fun NewReportsScreen(
                                         filters = ReportFilters(
                                             dateRange = selectedDateRange,
                                             department = selectedDepartment,
-                                            project = allProjects.find { it.id == projectId }?.name ?: "Unknown Project"
+                                            project = if (projectId == "ALL_PROJECTS") "All Projects" else (allProjects.find { it.id == projectId }?.name ?: "Unknown Project")
                                         )
                                     )
                                     

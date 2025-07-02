@@ -209,23 +209,8 @@ fun ProductionHeadHomeScreen(
                             }
                         }
 
-                        val pendingExpenses = expenses.filter { it.status == ExpenseStatus.PENDING && it.projectId == projectId }
-                        if (pendingExpenses.isNotEmpty()) {
-                            val pendingSummaryNotification = NotificationData(
-                                id = "dynamic_pending_summary",
-                                title = "${pendingExpenses.size} expenses pending review",
-                                message = "Total: ${formatIndianNumber(pendingExpenses.sumOf { expense -> expense.amount })} awaiting approval",
-                                type = NotificationType.PENDING_APPROVAL_REMINDER,
-                                recipientId = currentProductionHeadId,
-                                senderId = "system",
-                                amount = pendingExpenses.sumOf { expense -> expense.amount },
-                                isRead = true,
-                                createdAt = com.google.firebase.Timestamp.now()
-                            )
-
-                            combinedNotifications.removeAll { it.id == "dynamic_pending_summary" }
-                            combinedNotifications.add(pendingSummaryNotification)
-                        }
+                        // Remove pending expenses summary - only show individual expense submissions
+                        android.util.Log.d("ProductionHeadNotifications", "✅ Skipping pending summary - showing only individual submissions")
                     },
                     onFailure = { }
                 )
@@ -273,7 +258,7 @@ fun ProductionHeadHomeScreen(
         }
     }
 
-    val drawerItems = listOf("Dashboard", "Pending Approvals")
+    val drawerItems = listOf("Dashboard", "Pending Approvals", "Add Expenses")
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -292,6 +277,7 @@ fun ProductionHeadHomeScreen(
                                 when (item) {
                                     "Dashboard" -> { }
                                     "Pending Approvals" -> navController.navigate("pending_approvals/$projectId")
+                                    "Add Expenses" -> navController.navigate("new_expense/$projectId")
                                 }
                             },
                             modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)

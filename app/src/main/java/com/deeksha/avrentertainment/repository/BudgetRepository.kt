@@ -1776,4 +1776,119 @@ class NotificationRepository(private val context: Context? = null) {
             android.util.Log.e("LoginNotifications", "Failed to send login notifications: ${e.message}")
         }
     }
+
+    // PROJECT-SPECIFIC NOTIFICATION METHODS
+    suspend fun getProjectSpecificNotifications(
+        userId: String,
+        projectId: String,
+        userRole: UserRole
+    ): Result<List<NotificationData>> = withContext(Dispatchers.IO) {
+        try {
+            android.util.Log.d("ProjectNotifications", "🔍 Loading project-specific notifications for $userRole: $userId, project: $projectId")
+            
+            val relevantTypes = when (userRole) {
+                UserRole.USER -> listOf(
+                    NotificationType.EXPENSE_APPROVED,
+                    NotificationType.EXPENSE_REJECTED,
+                    NotificationType.BUDGET_ADDED,
+                    NotificationType.BUDGET_DEDUCTED,
+                    NotificationType.BUDGET_EXCEEDED_PROJECT,
+                    NotificationType.BUDGET_EXCEEDED_DEPARTMENT
+                )
+                UserRole.APPROVER, UserRole.PRODUCTION_HEAD -> listOf(
+                    NotificationType.EXPENSE_SUBMITTED,
+                    NotificationType.BUDGET_EXCEEDED_PROJECT,
+                    NotificationType.BUDGET_EXCEEDED_DEPARTMENT,
+                    NotificationType.BUDGET_ADDED,
+                    NotificationType.BUDGET_DEDUCTED
+                )
+            }
+            
+            val snapshot = notificationsCollection
+                .whereEqualTo("recipientId", userId)
+                .whereEqualTo("projectId", projectId)
+                .get().await()
+                
+            val notifications = snapshot.documents.mapNotNull { document -> 
+                document.toObject(NotificationData::class.java) 
+            }
+                .filter { notification -> notification.type in relevantTypes }
+                .sortedByDescending { notification -> notification.createdAt.seconds }
+                .take(10) // Limit to 10 most recent notifications
+            
+            android.util.Log.d("ProjectNotifications", "✅ Found ${notifications.size} project-specific notifications")
+            Result.success(notifications)
+        } catch (e: Exception) {
+            android.util.Log.e("ProjectNotifications", "❌ Error loading project notifications: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    // Get approver notifications before login (for project selection screen)
+    suspend fun getApproverNotificationsPreLogin(
+        approverId: String,
+        limitCount: Int = 5
+    ): Result<List<NotificationData>> = withContext(Dispatchers.IO) {
+        try {
+            android.util.Log.d("ApproverNotifications", "🔍 Loading pre-login notifications for approver: $approverId")
+            
+            val approverTypes = listOf(
+                NotificationType.EXPENSE_SUBMITTED,
+                NotificationType.BUDGET_EXCEEDED_PROJECT,
+                NotificationType.BUDGET_EXCEEDED_DEPARTMENT
+            )
+            
+            val snapshot = notificationsCollection
+                .whereEqualTo("recipientId", approverId)
+                .get().await()
+                
+            val notifications = snapshot.documents.mapNotNull { document -> 
+                document.toObject(NotificationData::class.java) 
+            }
+                .filter { notification -> notification.type in approverTypes }
+                .filter { !it.isRead } // Only unread notifications
+                .sortedByDescending { notification -> notification.createdAt.seconds }
+                .take(limitCount)
+            
+            android.util.Log.d("ApproverNotifications", "✅ Found ${notifications.size} pre-login approver notifications")
+            Result.success(notifications)
+        } catch (e: Exception) {
+            android.util.Log.e("ApproverNotifications", "❌ Error loading approver notifications: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    // Send project selection notification to user
+    suspend fun sendProjectSelectionNotification(
+        userId: String,
+        projectId: String,
+        projectName: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            android.util.Log.d("ProjectNotifications", "📱 Sending project selection notification for: $projectName")
+            
+            val notification = NotificationData(
+                title = "Project Selected",
+                message = "You've selected $projectName. Stay updated with project notifications!",
+                type = NotificationType.PROJECT_UPDATED,
+                recipientId = userId,
+                senderId = "system",
+                projectId = projectId
+            )
+            
+            createNotification(notification).fold(
+                onSuccess = { notificationId ->
+                    android.util.Log.d("ProjectNotifications", "✅ Created project selection notification: $notificationId")
+                },
+                onFailure = { error ->
+                    android.util.Log.e("ProjectNotifications", "❌ Failed to create project selection notification: ${error.message}")
+                }
+            )
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e("ProjectNotifications", "❌ Error in project selection notification: ${e.message}")
+            Result.failure(e)
+        }
+    }
 } 

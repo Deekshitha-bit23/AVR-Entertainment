@@ -125,6 +125,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.deeksha.avrentertainment.ui.screens.ProductionHeadHomeScreen
 import com.deeksha.avrentertainment.ui.screens.CreateProjectScreen
 import com.deeksha.avrentertainment.ui.screens.CreateUserScreen
+import com.deeksha.avrentertainment.NewReportsScreen
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.RadioButton
 import androidx.navigation.navArgument
@@ -521,6 +522,8 @@ class MainActivity : ComponentActivity() {
         }
     }
     
+
+    
     // Add method to simulate project-level budget changes
     private fun simulateProjectBudgetChange(projectId: String, projectName: String, amount: Double, changeType: String) {
         lifecycleScope.launch {
@@ -726,9 +729,8 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier, 
                     // Handle submit (e.g., save to Firestore)
                 },
                 onBack = { 
-                    navController.navigate("project_selection/team_member") {
-                        popUpTo("project_selection/team_member") { inclusive = true }
-                    }
+                    // Navigate back to the previous screen instead of hardcoded team_member
+                    navController.popBackStack()
                 },
                 projectRepository = projectRepository,
                 expenseRepository = expenseRepository,
@@ -761,6 +763,16 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier, 
                 projectRepository = projectRepository,
                 expenseRepository = expenseRepository,
                 projectId = projectId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        // All Projects Reports Route
+        composable("all_projects_reports") {
+            NewReportsScreen(
+                navController = navController,
+                projectRepository = projectRepository,
+                expenseRepository = expenseRepository,
+                projectId = "ALL_PROJECTS", // Special identifier for all projects
                 onBack = { navController.popBackStack() }
             )
         }
@@ -1331,7 +1343,7 @@ fun ProjectSelectionScreen(
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.Black)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         "AVR ENTERTAINMENT",
                         style = MaterialTheme.typography.headlineMedium.copy(
@@ -1343,6 +1355,19 @@ fun ProjectSelectionScreen(
                         "Select Project",
                         style = MaterialTheme.typography.bodyLarge,
                         color = Color.Gray
+                    )
+                }
+                // Analytics Icon
+                IconButton(
+                    onClick = { 
+                        navController.navigate("all_projects_reports")
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.Assessment,
+                        contentDescription = "All Projects Report",
+                        tint = Color(0xFF4169E1),
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             }
@@ -1649,11 +1674,12 @@ fun TeamMemberHomeScreen(navController: NavHostController, projectId: String, on
                 val authRepository = AuthRepository()
                 val currentUserId = authRepository.getCurrentUserPhoneNumber() ?: "+919876543210" // Fallback to test user
 
-                android.util.Log.d("NotificationLoader", "🔍 Loading dynamic notifications for user: $currentUserId")
+                android.util.Log.d("NotificationLoader", "🔍 Loading project-specific notifications for user: $currentUserId, project: $projectId")
 
-                // Load both stored notifications and generate dynamic ones from recent activity
-                val storedNotificationsResult = notificationRepository.getNotificationsForUser(
+                // Load project-specific stored notifications only
+                val storedNotificationsResult = notificationRepository.getProjectSpecificNotifications(
                     userId = currentUserId,
+                    projectId = projectId,
                     userRole = com.deeksha.avrentertainment.models.UserRole.USER
                 )
 
@@ -1681,10 +1707,10 @@ fun TeamMemberHomeScreen(navController: NavHostController, projectId: String, on
 
                         val recentExpenses = expenses.filter { expense ->
                             val expenseTime = expense.submittedAt.seconds * 1000
-                            expenseTime > oneDayAgo
+                            expenseTime > oneDayAgo && expense.projectId == projectId
                         }
 
-                        android.util.Log.d("NotificationLoader", "📊 Found ${recentExpenses.size} recent expenses")
+                        android.util.Log.d("NotificationLoader", "📊 Found ${recentExpenses.size} recent expenses for project $projectId")
 
                         // Create dynamic notifications for recent activity
                         recentExpenses.forEach { expense ->
@@ -1757,7 +1783,7 @@ fun TeamMemberHomeScreen(navController: NavHostController, projectId: String, on
                 userNotifications = sortedNotifications
                 isLoadingNotifications = false
 
-                android.util.Log.d("NotificationLoader", "✅ Final notification count: ${userNotifications.size}")
+                android.util.Log.d("NotificationLoader", "✅ Final project-specific notification count: ${userNotifications.size} for project $projectId")
                 userNotifications.forEach { notification ->
                     android.util.Log.d("NotificationLoader", "📬 ${notification.title} ${notification.message}")
                 }
@@ -2285,26 +2311,8 @@ fun ApproverHomeScreen(navController: NavHostController, projectId: String, onBa
                             }
                         }
 
-                        // Add pending expenses summary notification (matching screenshot format)
-                        val pendingExpenses = expenses.filter { it.status == ExpenseStatus.PENDING && it.projectId == projectId }
-                        if (pendingExpenses.isNotEmpty()) {
-                            val pendingSummaryNotification = NotificationData(
-                                id = "dynamic_pending_summary",
-                                title = "${pendingExpenses.size} expenses pending review",
-                                message = "Total: ${formatIndianNumber(pendingExpenses.sumOf { expense -> expense.amount })} awaiting approval",
-                                type = NotificationType.PENDING_APPROVAL_REMINDER,
-                                recipientId = currentApproverId,
-                                senderId = "system",
-                                amount = pendingExpenses.sumOf { expense -> expense.amount },
-                                isRead = true, // Mark as read since it's a summary
-                                createdAt = com.google.firebase.Timestamp.now()
-                            )
-
-                            // Remove old pending summary and add new one
-                            combinedNotifications.removeAll { it.id == "dynamic_pending_summary" }
-                            combinedNotifications.add(pendingSummaryNotification)
-                            android.util.Log.d("ApproverNotifications", "➕ Added pending summary: ${pendingExpenses.size} expenses")
-                        }
+                        // Remove pending expenses summary - only show individual expense submissions
+                        android.util.Log.d("ApproverNotifications", "✅ Skipping pending summary - showing only individual submissions")
                     },
                     onFailure = {
                         android.util.Log.e("ApproverNotifications", "Failed to load recent expenses: ${it.message}")
@@ -2371,7 +2379,7 @@ fun ApproverHomeScreen(navController: NavHostController, projectId: String, onBa
         }
     }
 
-    val drawerItems = listOf("Dashboard", "Pending Approvals")
+    val drawerItems = listOf("Dashboard", "Pending Approvals", "Add Expenses")
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -2392,6 +2400,7 @@ fun ApproverHomeScreen(navController: NavHostController, projectId: String, onBa
                                         // Already on dashboard, just close drawer
                                     }
                                     "Pending Approvals" -> navController.navigate("pending_approvals/$projectId")
+                                    "Add Expenses" -> navController.navigate("new_expense/$projectId")
                                 }
                             },
                             modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
@@ -3142,7 +3151,7 @@ fun TrackSubmissionsScreen(projectId: String, onBack: () -> Unit = {}) {
                     }
                 )
 
-                // Load all submissions for this project
+                // Load submissions for this project and current user
                 val expenseRepository = ExpenseRepository()
                 expenseRepository.getAllExpenses().fold(
                     onSuccess = { allExpenses ->
@@ -3154,48 +3163,49 @@ fun TrackSubmissionsScreen(projectId: String, onBack: () -> Unit = {}) {
                         android.util.Log.d("TrackSubmissions", "🔍 Project ID: $projectId")
                         android.util.Log.d("TrackSubmissions", "🔍 Total expenses in database: ${allExpenses.size}")
                         
-                        // Log all expenses for debugging
-                        allExpenses.forEach { expense ->
-                            android.util.Log.d("TrackSubmissions", "📋 Expense: ${expense.department} - Project: ${expense.projectId} - User: ${expense.submittedBy} - Status: ${expense.status}")
-                        }
-                        
-                        // First try to get current user's submissions for this project
-                        var userProjectSubmissions = allExpenses.filter { expense -> 
-                            expense.projectId == projectId && expense.submittedBy == currentUserPhone
-                        }
-                        
-                        // If no submissions found for current user, show all submissions for this project
-                        // This is useful for testing and when users want to see project activity
-                        if (userProjectSubmissions.isEmpty()) {
-                            android.util.Log.d("TrackSubmissions", "⚠️ No submissions found for current user, showing all project submissions")
-                            userProjectSubmissions = allExpenses.filter { expense -> 
-                                expense.projectId == projectId
+                        // Get current user's role to determine what submissions to show
+                        authRepository.getUserRole(currentUserPhone ?: "").fold(
+                            onSuccess = { userRole ->
+                                val userProjectSubmissions = when (userRole) {
+                                    com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD -> {
+                                        // Production heads can see all submissions for the project
+                                        allExpenses.filter { expense -> 
+                                            expense.projectId == projectId
+                                        }
+                                    }
+                                    com.deeksha.avrentertainment.models.UserRole.APPROVER -> {
+                                        // Approvers can see all submissions for the project
+                                        allExpenses.filter { expense -> 
+                                            expense.projectId == projectId
+                                        }
+                                    }
+                                    else -> {
+                                        // Regular users see only their own submissions for the project
+                                        allExpenses.filter { expense -> 
+                                            expense.projectId == projectId && 
+                                            (expense.submittedById == currentUserPhone || expense.submittedBy == currentUserPhone)
+                                        }
+                                    }
+                                }
+                                
+                                submissions = userProjectSubmissions.sortedByDescending { it.submittedAt.seconds }
+                                
+                                android.util.Log.d("TrackSubmissions", "✅ Loaded ${submissions.size} submissions for $userRole")
+                                submissions.forEach { submission ->
+                                    android.util.Log.d("TrackSubmissions", "📊 ${submission.department}: ${submission.status} - ₹${submission.amount}")
+                                }
+                            },
+                            onFailure = { e ->
+                                android.util.Log.e("TrackSubmissions", "❌ Error getting user role: ${e.message}")
+                                // Fallback to showing only current user's submissions
+                                val userProjectSubmissions = allExpenses.filter { expense -> 
+                                    expense.projectId == projectId && 
+                                    (expense.submittedById == currentUserPhone || expense.submittedBy == currentUserPhone)
+                                }
+                                submissions = userProjectSubmissions.sortedByDescending { it.submittedAt.seconds }
+                                android.util.Log.d("TrackSubmissions", "✅ Fallback: Loaded ${submissions.size} user submissions")
                             }
-                        }
-                        
-                        // If still no submissions, try different project matching strategies
-                        if (userProjectSubmissions.isEmpty()) {
-                            android.util.Log.d("TrackSubmissions", "⚠️ No submissions found for exact project ID, trying partial matching")
-                            // Try to find submissions where projectId contains the target or vice versa
-                            userProjectSubmissions = allExpenses.filter { expense ->
-                                expense.projectId.contains(projectId, ignoreCase = true) ||
-                                projectId.contains(expense.projectId, ignoreCase = true) ||
-                                expense.projectId.isEmpty() // Include expenses without project ID as fallback
-                            }
-                        }
-                        
-                        // Final fallback: show recent submissions regardless of project for demo
-                        if (userProjectSubmissions.isEmpty()) {
-                            android.util.Log.d("TrackSubmissions", "⚠️ No project-specific submissions found, showing recent submissions as demo")
-                            userProjectSubmissions = allExpenses.sortedByDescending { it.submittedAt.seconds }.take(10)
-                        }
-                        
-                        submissions = userProjectSubmissions.sortedByDescending { it.submittedAt.seconds }
-                        
-                        android.util.Log.d("TrackSubmissions", "✅ Final submission count: ${submissions.size}")
-                        submissions.forEach { submission ->
-                            android.util.Log.d("TrackSubmissions", "📊 ${submission.department}: ${submission.status} - ₹${submission.amount}")
-                        }
+                        )
                     },
                     onFailure = { e ->
                         error = "Failed to load submissions: ${e.message}"
@@ -3211,99 +3221,7 @@ fun TrackSubmissionsScreen(projectId: String, onBack: () -> Unit = {}) {
         }
     }
     
-    // Function to create sample submissions for testing (can be called when no data exists)
-    fun createSampleSubmissions() {
-        scope.launch {
-            try {
-                val expenseRepository = ExpenseRepository()
-                val authRepository = AuthRepository()
-                val currentUserPhone = authRepository.getCurrentUserPhoneNumber() ?: "+919876543210"
-                
-                android.util.Log.d("TrackSubmissions", "🧪 Creating sample submissions for testing")
-                
-                // Create a few sample expenses with different statuses
-                val sampleExpenses = listOf(
-                    Expense(
-                        id = "sample_${System.currentTimeMillis()}_1",
-                        projectId = projectId,
-                        department = "Camera",
-                        description = "Camera equipment rental for outdoor shoot",
-                        amount = 25000.0,
-                        submittedBy = currentUserPhone,
-                        status = ExpenseStatus.APPROVED,
-                        submittedAt = com.google.firebase.Timestamp.now(),
-                        reviewedAt = com.google.firebase.Timestamp.now()
-                    ),
-                    Expense(
-                        id = "sample_${System.currentTimeMillis()}_2",
-                        projectId = projectId,
-                        department = "Sound",
-                        description = "Sound mixing and recording equipment",
-                        amount = 15000.0,
-                        submittedBy = currentUserPhone,
-                        status = ExpenseStatus.PENDING,
-                        submittedAt = com.google.firebase.Timestamp.now()
-                    ),
-                    Expense(
-                        id = "sample_${System.currentTimeMillis()}_3",
-                        projectId = projectId,
-                        department = "Art",
-                        description = "Set decoration and props",
-                        amount = 35000.0,
-                        submittedBy = currentUserPhone,
-                        status = ExpenseStatus.REJECTED,
-                        submittedAt = com.google.firebase.Timestamp.now(),
-                        reviewedAt = com.google.firebase.Timestamp.now(),
-                        reviewerNote = "Budget exceeded for this category"
-                    ),
-                    Expense(
-                        id = "sample_${System.currentTimeMillis()}_4",
-                        projectId = projectId,
-                        department = "Other",
-                        description = "Transportation and logistics",
-                        amount = 12000.0,
-                        submittedBy = currentUserPhone,
-                        status = ExpenseStatus.APPROVED,
-                        submittedAt = com.google.firebase.Timestamp.now(),
-                        reviewedAt = com.google.firebase.Timestamp.now()
-                    )
-                )
-                
-                // Add sample expenses to database
-                sampleExpenses.forEach { expense ->
-                    expenseRepository.createExpense(expense).fold(
-                        onSuccess = { expenseId ->
-                            android.util.Log.d("TrackSubmissions", "✅ Created sample expense: ${expense.department} with ID: $expenseId")
-                        },
-                        onFailure = { e ->
-                            android.util.Log.e("TrackSubmissions", "❌ Failed to create sample expense: ${e.message}")
-                        }
-                    )
-                }
-                
-                // Refresh the data after creating samples
-                kotlinx.coroutines.delay(2000) // Wait for Firebase to sync
-                
-                // Reload the submissions
-                expenseRepository.getAllExpenses().fold(
-                    onSuccess = { allExpenses ->
-                        val updatedSubmissions = allExpenses.filter { expense -> 
-                            expense.projectId == projectId
-                        }.sortedByDescending { it.submittedAt.seconds }
-                        
-                        submissions = updatedSubmissions
-                        android.util.Log.d("TrackSubmissions", "🔄 Refreshed with ${updatedSubmissions.size} submissions after sample creation")
-                    },
-                    onFailure = { e ->
-                        android.util.Log.e("TrackSubmissions", "❌ Failed to refresh after sample creation: ${e.message}")
-                    }
-                )
-                
-            } catch (e: Exception) {
-                android.util.Log.e("TrackSubmissions", "❌ Error creating sample submissions: ${e.message}")
-            }
-        }
-    }
+
 
     // Handle back press
     androidx.activity.compose.BackHandler {
@@ -3338,20 +3256,39 @@ fun TrackSubmissionsScreen(projectId: String, onBack: () -> Unit = {}) {
             
             // Refresh button
             IconButton(onClick = { 
-                // Refresh data by triggering LaunchedEffect again
+                // Refresh data by reloading
                 scope.launch {
                     isLoading = true
                     kotlinx.coroutines.delay(100) // Small delay to show loading
                     
                     val expenseRepository = ExpenseRepository()
+                    val authRepository = AuthRepository()
+                    val currentUserPhone = authRepository.getCurrentUserPhoneNumber()
+                    
                     expenseRepository.getAllExpenses().fold(
                         onSuccess = { allExpenses ->
-                            val refreshedSubmissions = allExpenses.filter { expense -> 
-                                expense.projectId == projectId
-                            }.sortedByDescending { it.submittedAt.seconds }
-                            
-                            submissions = refreshedSubmissions
-                            android.util.Log.d("TrackSubmissions", "🔄 Manual refresh: ${refreshedSubmissions.size} submissions found")
+                            authRepository.getUserRole(currentUserPhone ?: "").fold(
+                                onSuccess = { userRole ->
+                                    val refreshedSubmissions = when (userRole) {
+                                        com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD,
+                                        com.deeksha.avrentertainment.models.UserRole.APPROVER -> {
+                                            allExpenses.filter { expense -> expense.projectId == projectId }
+                                        }
+                                        else -> {
+                                            allExpenses.filter { expense -> 
+                                                expense.projectId == projectId && 
+                                                (expense.submittedById == currentUserPhone || expense.submittedBy == currentUserPhone)
+                                            }
+                                        }
+                                    }.sortedByDescending { it.submittedAt.seconds }
+                                    
+                                    submissions = refreshedSubmissions
+                                    android.util.Log.d("TrackSubmissions", "🔄 Manual refresh: ${refreshedSubmissions.size} submissions found")
+                                },
+                                onFailure = { e ->
+                                    error = "Failed to refresh: ${e.message}"
+                                }
+                            )
                         },
                         onFailure = { e ->
                             error = "Failed to refresh: ${e.message}"
@@ -3453,36 +3390,30 @@ fun TrackSubmissionsScreen(projectId: String, onBack: () -> Unit = {}) {
                     elevation = CardDefaults.cardElevation(2.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(20.dp),
+                        modifier = Modifier.padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            "No submissions found for this project",
-                            fontSize = 16.sp,
-                            color = Color(0xFF666666),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 16.dp)
+                        Icon(
+                            Icons.Default.Assessment,
+                            contentDescription = "No submissions",
+                            modifier = Modifier.size(48.dp),
+                            tint = Color(0xFF999999)
                         )
+                        Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "Start by adding expense submissions or try the demo data below",
+                            "No submissions found",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF666666),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Submit your first expense to see it here",
                             fontSize = 14.sp,
                             color = Color(0xFF999999),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 20.dp)
+                            textAlign = TextAlign.Center
                         )
-                        
-                        // Demo data button for testing
-                        Button(
-                            onClick = { createSampleSubmissions() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E5CFF)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                "Create Demo Submissions",
-                                color = Color.White,
-                                fontSize = 14.sp
-                            )
-                        }
                     }
                 }
             } else {
@@ -7715,6 +7646,13 @@ fun DynamicBarChart(
     val sortedData = data.entries.sortedByDescending { it.value }
     val maxValue = budgetData.values.maxOrNull() ?: data.values.maxOrNull() ?: 0.0
     
+    // Ensure we have budget data for all departments
+    val completeBudgetData = data.mapKeys { it.key }.mapValues { (category, spentValue) ->
+        budgetData[category] ?: (spentValue * 1.3) // Default to 30% buffer if no budget specified
+    }
+    
+    val adjustedMaxValue = completeBudgetData.values.maxOrNull() ?: maxValue
+    
     Box(modifier = modifier) {
             Column(
                 modifier = Modifier
@@ -7727,7 +7665,7 @@ fun DynamicBarChart(
                         .fillMaxWidth()
                         .height(280.dp)
                 ) {
-                    // Value labels row
+                    // Value labels row - Show budget amounts
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -7735,12 +7673,12 @@ fun DynamicBarChart(
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.Bottom
                     ) {
-                        sortedData.forEachIndexed { index, (category, value) ->
+                        sortedData.forEachIndexed { index, (category, spentValue) ->
                             Box(
                                 modifier = Modifier.weight(1f),
                                 contentAlignment = Alignment.Center
                             ) {
-                            val budget = budgetData[category] ?: value
+                            val budget = completeBudgetData[category] ?: spentValue
                                 Text(
                                 "₹${String.format("%.0f", budget / 1000)}K",
                                     fontSize = 11.sp,
@@ -7763,10 +7701,10 @@ fun DynamicBarChart(
                         verticalAlignment = Alignment.Bottom
                     ) {
                     sortedData.forEachIndexed { index, (category, spentValue) ->
-                        val budget = budgetData[category] ?: spentValue
+                        val budget = completeBudgetData[category] ?: spentValue
                         val remainingValue = (budget - spentValue).coerceAtLeast(0.0)
-                        val spentHeight = (spentValue / maxValue * 160.dp.value).dp
-                        val remainingHeight = (remainingValue / maxValue * 160.dp.value).dp
+                        val spentHeight = (spentValue / adjustedMaxValue * 160.dp.value).dp
+                        val remainingHeight = (remainingValue / adjustedMaxValue * 160.dp.value).dp
                         val totalHeight = spentHeight + remainingHeight
                             
                             Box(
@@ -7782,14 +7720,14 @@ fun DynamicBarChart(
                                     .height(totalHeight),
                                 verticalArrangement = Arrangement.Bottom
                             ) {
-                                // Remaining amount (top part) - grey
+                                // Remaining amount (top part) - light blue/grey
                                 if (remainingValue > 0) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .height(remainingHeight)
                                         .background(
-                                                Color(0xFFB0BEC5), // Light grey for remaining
+                                                Color(0xFFE3F2FD), // Light blue for remaining budget
                                                 RoundedCornerShape(
                                                     topStart = 4.dp,
                                                     topEnd = 4.dp,
@@ -7799,10 +7737,10 @@ fun DynamicBarChart(
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        if (remainingHeight > 30.dp) { // Only show text if bar is tall enough
+                                        if (remainingHeight > 25.dp) { // Show text if bar is tall enough
                                             Text(
                                                 text = "₹${String.format("%.0f", remainingValue / 1000)}K",
-                                                color = Color.Black,
+                                                color = Color(0xFF1976D2),
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Medium,
                                                 textAlign = TextAlign.Center
