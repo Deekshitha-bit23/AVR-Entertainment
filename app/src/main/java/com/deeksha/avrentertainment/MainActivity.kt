@@ -247,6 +247,12 @@ class MainActivity : ComponentActivity() {
         super.onBackPressed()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        // Clean up secure OTP manager on app destroy
+        com.deeksha.avrentertainment.services.SecureOTPManager.getInstance().onApplicationDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -806,16 +812,20 @@ fun SimplifiedLoginScreen(navController: NavHostController, notificationReposito
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Clean up listener when composable is disposed
+    // Clean up secure OTP session when composable is disposed
     DisposableEffect(Unit) {
         onDispose {
-            SMSBroadcastReceiver.removeOTPListener()
+            com.deeksha.avrentertainment.services.SecureOTPManager.getInstance().endSession("Login screen disposed")
+            android.util.Log.d("SecureOTP", "🧹 Login screen disposed - OTP session ended")
         }
     }
 
     // Handle navigation based on authentication state
     LaunchedEffect(state.isAuthenticated) {
         if (state.isAuthenticated) {
+            // End OTP session securely
+            com.deeksha.avrentertainment.services.SecureOTPManager.getInstance().endSession("Authentication successful")
+            
             // Track user login for smart push notifications and send login notifications
             scope.launch {
                 try {
@@ -866,18 +876,23 @@ fun SimplifiedLoginScreen(navController: NavHostController, notificationReposito
     // Auto-fill OTP when received
     LaunchedEffect(state.otpSent) {
         if (state.otpSent) {
-            // Start SMS retriever when OTP is sent
-            val client = com.google.android.gms.auth.api.phone.SmsRetriever.getClient(context)
-            client.startSmsRetriever().addOnSuccessListener {
-                android.util.Log.d("SMSRetriever", "SMS Retriever started successfully")
-            }.addOnFailureListener { exception ->
-                android.util.Log.e("SMSRetriever", "Failed to start SMS Retriever", exception)
-            }
+            // Initialize secure OTP session
+            com.deeksha.avrentertainment.services.SecureOTPManager.getInstance().initializeSecureSession(context)
+            android.util.Log.d("SecureOTP", "🔐 Secure OTP session initialized")
+        }
+    }
 
-            // Set up OTP listener
-            SMSBroadcastReceiver.setOTPListener { extractedOtp ->
-                viewModel.updateOtp(extractedOtp)
-                android.util.Log.d("AutoOTP", "OTP automatically filled: $extractedOtp")
+    // Monitor secure OTP state
+    val secureOTPManager = remember { com.deeksha.avrentertainment.services.SecureOTPManager.getInstance() }
+    val otpState by secureOTPManager.otpState.collectAsState()
+    
+    // Auto-fill OTP when received securely
+    LaunchedEffect(otpState.isOTPValid, otpState.lastOTPReceived) {
+        if (otpState.isOTPValid && otpState.lastOTPReceived != null) {
+            val decryptedOTP = secureOTPManager.getDecryptedOTP()
+            if (decryptedOTP != null) {
+                viewModel.updateOtp(decryptedOTP)
+                android.util.Log.d("SecureOTP", "✅ OTP auto-filled securely: ${decryptedOTP.take(2)}****")
             }
         }
     }
@@ -979,25 +994,80 @@ fun SimplifiedLoginScreen(navController: NavHostController, notificationReposito
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
-                    OutlinedTextField(
-                        value = state.otp,
-                        onValueChange = { newValue ->
-                            val cleaned = newValue.filter { it.isDigit() }
-                            if (cleaned.length <= 6) {
-                                viewModel.updateOtp(cleaned)
+                    Column {
+                        OutlinedTextField(
+                            value = state.otp,
+                            onValueChange = { newValue ->
+                                val cleaned = newValue.filter { it.isDigit() }
+                                if (cleaned.length <= 6) {
+                                    viewModel.updateOtp(cleaned)
+                                }
+                            },
+                            label = { Text("Enter OTP") },
+                            placeholder = { 
+                                Text(
+                                    if (otpState.isAutoFillActive) "Auto-fill active..." 
+                                    else "Enter 6-digit OTP"
+                                ) 
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = if (otpState.isAutoFillActive) Color(0xFF4CAF50) else Color(0xFF2E5CFF),
+                                focusedLabelColor = if (otpState.isAutoFillActive) Color(0xFF4CAF50) else Color(0xFF2E5CFF),
+                                unfocusedBorderColor = if (otpState.isAutoFillActive) Color(0xFF4CAF50) else Color.Gray
+                            ),
+                            singleLine = true,
+                            enabled = !state.isLoading,
+                            trailingIcon = {
+                                if (otpState.isAutoFillActive) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = "Auto-fill active",
+                                        tint = Color(0xFF4CAF50),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
-                        },
-                        label = { Text("Enter OTP") },
-                        placeholder = { Text("OTP (Auto-fill enabled)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF2E5CFF),
-                            focusedLabelColor = Color(0xFF2E5CFF)
-                        ),
-                        singleLine = true,
-                        enabled = !state.isLoading
-                    )
+                        )
+                        
+                        // Auto-fill status indicator
+                        if (otpState.isAutoFillActive) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    Icons.Default.Notifications,
+                                    contentDescription = "Auto-fill status",
+                                    tint = Color(0xFF4CAF50),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = when {
+                                        otpState.autoFillSource != null -> "✅ OTP auto-filled from ${otpState.autoFillSource}"
+                                        otpState.error != null -> "⚠️ ${otpState.error}"
+                                        else -> "📱 Waiting for SMS..."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (otpState.error != null) Color.Red else Color(0xFF4CAF50)
+                                )
+                            }
+                            
+                            // Show remaining time if OTP is valid
+                            if (otpState.isOTPValid && otpState.timeRemaining > 0) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "⏱️ OTP valid for ${otpState.timeRemaining / 1000}s",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.Gray,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
