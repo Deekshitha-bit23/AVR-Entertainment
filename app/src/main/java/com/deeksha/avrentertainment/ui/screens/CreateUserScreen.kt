@@ -26,6 +26,8 @@ import com.google.firebase.Timestamp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import kotlinx.coroutines.tasks.await
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +36,7 @@ fun CreateUserScreen(
     onUserCreated: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     
     // Form state
     var phoneNumber by remember { mutableStateOf("") }
@@ -91,6 +94,10 @@ fun CreateUserScreen(
                     .set(userData)
                     .await()
                 
+                // Show success message
+                Toast.makeText(context, "User created successfully!", Toast.LENGTH_SHORT).show()
+                
+                // Call the callback to trigger navigation in MainActivity
                 onUserCreated()
                 
             } catch (e: Exception) {

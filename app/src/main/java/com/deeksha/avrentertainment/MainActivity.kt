@@ -71,6 +71,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -797,8 +798,10 @@ fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier, 
             CreateUserScreen(
                 navController = navController,
                 onUserCreated = {
-                    // Navigate back to project selection
-                    navController.popBackStack()
+                    // Navigate back to project selection screen for production head
+                    navController.navigate("project_selection/production_head") {
+                        popUpTo("project_selection/production_head") { inclusive = true }
+                    }
                 }
             )
         }
@@ -1327,6 +1330,12 @@ fun ProjectSelectionScreen(
     var projects by remember { mutableStateOf<List<Project>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    
+    // Notification states for approver
+    var allProjectNotifications by remember { mutableStateOf<List<NotificationData>>(emptyList()) }
+    var isLoadingNotifications by remember { mutableStateOf(true) }
+    var showNotificationsModal by remember { mutableStateOf(false) }
+    var totalNotificationCount by remember { mutableStateOf(0) }
 
     // Load active projects
     LaunchedEffect(Unit) {
@@ -1347,9 +1356,62 @@ fun ProjectSelectionScreen(
         }
     }
 
-    // Handle back press
-    androidx.activity.compose.BackHandler {
-        onBack()
+    // Load notifications for all user roles
+    LaunchedEffect(Unit) {
+        scope.launch {
+            try {
+                isLoadingNotifications = true
+                val authRepository = AuthRepository()
+                val notificationRepository = NotificationRepository(context)
+                val currentUserId = authRepository.getCurrentUserPhoneNumber()
+                
+                if (currentUserId != null) {
+                    authRepository.getUserRole(currentUserId).fold(
+                        onSuccess = { role ->
+                            when (role) {
+                                com.deeksha.avrentertainment.models.UserRole.APPROVER -> {
+                                    // Load all project notifications for approver
+                                    notificationRepository.getNotificationsForUser(currentUserId, role).fold(
+                                        onSuccess = { notifications ->
+                                            allProjectNotifications = notifications.take(20) // Limit to recent 20
+                                            totalNotificationCount = notifications.filter { !it.isRead }.size
+                                            android.util.Log.d("ProjectSelection", "✅ Loaded ${notifications.size} approver notifications, ${totalNotificationCount} unread")
+                                        },
+                                        onFailure = { e ->
+                                            android.util.Log.e("ProjectSelection", "❌ Error loading approver notifications: ${e.message}")
+                                        }
+                                    )
+                                }
+                                com.deeksha.avrentertainment.models.UserRole.USER -> {
+                                    // Load user-specific notifications (approval/rejection of their submitted expenses)
+                                    notificationRepository.getNotificationsForUser(currentUserId, role).fold(
+                                        onSuccess = { notifications ->
+                                            allProjectNotifications = notifications.take(20) // Limit to recent 20
+                                            totalNotificationCount = notifications.filter { !it.isRead }.size
+                                            android.util.Log.d("ProjectSelection", "✅ Loaded ${notifications.size} user notifications, ${totalNotificationCount} unread")
+                                        },
+                                        onFailure = { e ->
+                                            android.util.Log.e("ProjectSelection", "❌ Error loading user notifications: ${e.message}")
+                                        }
+                                    )
+                                }
+                                else -> {
+                                    // Production Head gets no notifications as per business rules
+                                    android.util.Log.d("ProjectSelection", "Production Head - no notifications loaded")
+                                }
+                            }
+                        },
+                        onFailure = { e ->
+                            android.util.Log.e("ProjectSelection", "❌ Error getting user role: ${e.message}")
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ProjectSelection", "❌ Exception loading notifications: ${e.message}")
+            } finally {
+                isLoadingNotifications = false
+            }
+        }
     }
 
     Scaffold(
@@ -1409,10 +1471,7 @@ fun ProjectSelectionScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { onBack() }) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.Black)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
+
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         "AVR ENTERTAINMENT",
@@ -1427,18 +1486,58 @@ fun ProjectSelectionScreen(
                         color = Color.Gray
                     )
                 }
-                // Analytics Icon
-                IconButton(
-                    onClick = { 
-                        navController.navigate("all_projects_reports")
-                    }
+                // Action Icons - Show notifications for Users and Approvers, Analytics for Approvers and Production Heads
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Default.Assessment,
-                        contentDescription = "All Projects Report",
-                        tint = Color(0xFF4169E1),
-                        modifier = Modifier.size(28.dp)
-                    )
+                    // Notifications Icon - For Users and Approvers
+                    if (userRole == "team_member" || userRole == "approver") {
+                        Box {
+                            IconButton(
+                                onClick = { showNotificationsModal = true }
+                            ) {
+                                Icon(
+                                    Icons.Default.Notifications,
+                                    contentDescription = if (userRole == "team_member") "My Notifications" else "All Project Notifications",
+                                    tint = Color(0xFF4169E1),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                            // Notification Badge
+                            if (totalNotificationCount > 0) {
+                                Badge(
+                                    modifier = Modifier
+                                        .offset(x = 4.dp, y = (-4).dp)
+                                        .size(18.dp),
+                                    containerColor = Color(0xFFE53E3E),
+                                    contentColor = Color.White
+                                ) {
+                                    Text(
+                                        text = if (totalNotificationCount > 99) "99+" else totalNotificationCount.toString(),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Analytics Icon - Only for Approvers and Production Heads
+                if (userRole == "approver" || userRole == "production_head") {
+                    IconButton(
+                        onClick = { 
+                            navController.navigate("all_projects_reports")
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.Assessment,
+                            contentDescription = "All Projects Report",
+                            tint = Color(0xFF4169E1),
+                            modifier = Modifier.size(28.dp)
+                        )
+                        }
+                    }
                 }
             }
 
@@ -1544,6 +1643,183 @@ fun ProjectSelectionScreen(
             }
         }
 
+        // Notifications Modal
+        if (showNotificationsModal) {
+            Dialog(
+                onDismissRequest = { showNotificationsModal = false }
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 600.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp)
+                    ) {
+                        // Header
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (userRole == "team_member") "My Notifications" else "All Project Notifications",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E5CFF)
+                                )
+                            )
+                            IconButton(onClick = { showNotificationsModal = false }) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Close",
+                                    tint = Color.Gray
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Notifications List
+                        if (isLoadingNotifications) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = Color(0xFF2E5CFF))
+                            }
+                        } else if (allProjectNotifications.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        Icons.Default.Notifications,
+                                        contentDescription = null,
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        if (userRole == "team_member") "No expense updates yet" else "No notifications yet",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.heightIn(max = 400.dp)
+                            ) {
+                                items(allProjectNotifications) { notification ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (notification.isRead) 
+                                                Color(0xFFF8F9FA) 
+                                            else 
+                                                Color(0xFFE3F2FD)
+                                        ),
+                                        elevation = CardDefaults.cardElevation(2.dp),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(16.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.Top
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        notification.title,
+                                                        style = MaterialTheme.typography.titleMedium.copy(
+                                                            fontWeight = if (notification.isRead) FontWeight.Medium else FontWeight.Bold,
+                                                            color = Color(0xFF2E5CFF)
+                                                        )
+                                                    )
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Text(
+                                                        notification.message,
+                                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                                            color = Color(0xFF333333)
+                                                        )
+                                                    )
+                                                }
+                                                if (!notification.isRead) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(8.dp)
+                                                            .background(
+                                                                Color(0xFF2E5CFF),
+                                                                CircleShape
+                                                            )
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                "Recently",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    color = Color.Gray
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Mark All as Read Button
+                        if (totalNotificationCount > 0) {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        try {
+                                            val notificationRepository = NotificationRepository(context)
+                                            // Mark all notifications as read
+                                            allProjectNotifications.filter { !it.isRead }.forEach { notification ->
+                                                notificationRepository.markNotificationAsRead(notification.id)
+                                            }
+                                            // Update local state
+                                            allProjectNotifications = allProjectNotifications.map { it.copy(isRead = true) }
+                                            totalNotificationCount = 0
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("ProjectSelection", "❌ Error marking notifications as read: ${e.message}")
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF2E5CFF)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    if (userRole == "team_member") "Mark All as Read" else "Mark All as Read",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
     }
 
@@ -3127,7 +3403,7 @@ fun DepartmentBudgetCard(
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        "Left: ${formatIndianCurrency(remaining)}",
+                        "Remaining: ${formatIndianCurrency(remaining)}",
                         color = Color.White.copy(alpha = 0.9f),
                         fontSize = 9.sp,
                         maxLines = 1,
@@ -3200,6 +3476,16 @@ fun TrackSubmissionsScreen(projectId: String, onBack: () -> Unit = {}) {
     var submissions by remember { mutableStateOf<List<Expense>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    
+    // Filter state - null means show all, specific status means filter by that status
+    var selectedFilter by remember { mutableStateOf<ExpenseStatus?>(null) }
+    
+    // Filtered submissions based on selected status
+    val filteredSubmissions = if (selectedFilter == null) {
+        submissions
+    } else {
+        submissions.filter { it.status == selectedFilter }
+    }
     
     // Load project and submissions data
     LaunchedEffect(projectId) {
@@ -3420,40 +3706,104 @@ fun TrackSubmissionsScreen(projectId: String, onBack: () -> Unit = {}) {
                 modifier = Modifier.padding(bottom = 16.dp)
             ) {
                 item {
-                    StatCard(
+                    ClickableStatCard(
                         title = "Approved",
                         count = approvedCount,
                         color = Color(0xFF4CAF50),
-                        icon = Icons.Default.Check
+                        icon = Icons.Default.Check,
+                        isSelected = selectedFilter == ExpenseStatus.APPROVED,
+                        onClick = {
+                            selectedFilter = if (selectedFilter == ExpenseStatus.APPROVED) null else ExpenseStatus.APPROVED
+                        }
                     )
                 }
                 item {
-                    StatCard(
+                    ClickableStatCard(
                         title = "Pending",
                         count = pendingCount,
                         color = Color(0xFFFF9800),
-                        icon = Icons.Default.Refresh
+                        icon = Icons.Default.Refresh,
+                        isSelected = selectedFilter == ExpenseStatus.PENDING,
+                        onClick = {
+                            selectedFilter = if (selectedFilter == ExpenseStatus.PENDING) null else ExpenseStatus.PENDING
+                        }
                     )
                 }
                 item {
-                    StatCard(
+                    ClickableStatCard(
                         title = "Rejected",
                         count = rejectedCount,
                         color = Color(0xFFF44336),
-                        icon = Icons.Default.Close
+                        icon = Icons.Default.Close,
+                        isSelected = selectedFilter == ExpenseStatus.REJECTED,
+                        onClick = {
+                            selectedFilter = if (selectedFilter == ExpenseStatus.REJECTED) null else ExpenseStatus.REJECTED
+                        }
                     )
                 }
             }
             
             // Recent Submissions List
-            Text(
-                "Recent Submissions",
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Recent Submissions",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp
+                )
+                if (selectedFilter != null) {
+                    TextButton(
+                        onClick = { selectedFilter = null }
+                    ) {
+                        Text(
+                            "Show All (${submissions.size})",
+                            color = Color(0xFF2E5CFF),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
             
-            if (submissions.isEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            if (filteredSubmissions.isEmpty() && submissions.isNotEmpty()) {
+                // Show "no items for filter" message
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Default.FilterList,
+                            contentDescription = "No filtered results",
+                            modifier = Modifier.size(48.dp),
+                            tint = Color(0xFF999999)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "No ${selectedFilter?.name?.lowercase()} submissions",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF666666),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Try selecting a different status or view all submissions",
+                            fontSize = 14.sp,
+                            color = Color(0xFF999999),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else if (submissions.isEmpty()) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -3490,7 +3840,7 @@ fun TrackSubmissionsScreen(projectId: String, onBack: () -> Unit = {}) {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(submissions) { submission ->
+                    items(filteredSubmissions) { submission ->
                         SubmissionCard(submission = submission)
                     }
                 }
@@ -3540,6 +3890,61 @@ fun StatCard(
                 color = Color.White.copy(alpha = 0.9f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun ClickableStatCard(
+    title: String,
+    count: Int,
+    color: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .width(100.dp)
+            .height(80.dp)
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) color else color.copy(alpha = 0.8f)
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isSelected) 8.dp else 4.dp
+        ),
+        shape = RoundedCornerShape(12.dp),
+        border = if (isSelected) BorderStroke(2.dp, color) else null
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                icon,
+                contentDescription = title,
+                tint = Color.White,
+                modifier = Modifier.size(if (isSelected) 24.dp else 20.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                count.toString(),
+                fontWeight = FontWeight.Bold,
+                fontSize = if (isSelected) 18.sp else 16.sp,
+                color = Color.White
+            )
+            Text(
+                title,
+                fontSize = if (isSelected) 11.sp else 10.sp,
+                color = Color.White.copy(alpha = 0.9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
             )
         }
     }

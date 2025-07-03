@@ -41,7 +41,7 @@ class SMSBroadcastReceiver : BroadcastReceiver() {
                 // Clear any existing listener
                 removeOTPListener()
                 
-                otpListener = listener
+            otpListener = listener
                 isListenerActive = true
                 
                 // Set timeout for auto-fill session
@@ -53,7 +53,7 @@ class SMSBroadcastReceiver : BroadcastReceiver() {
         
         fun removeOTPListener() {
             synchronized(this) {
-                otpListener = null
+            otpListener = null
                 isListenerActive = false
                 
                 // Clear timeout
@@ -127,11 +127,11 @@ class SMSBroadcastReceiver : BroadcastReceiver() {
             
             val extras = intent.extras
             val status = extras?.get(SmsRetriever.EXTRA_STATUS) as? Status
-            
+
             when (status?.statusCode) {
                 CommonStatusCodes.SUCCESS -> {
                     try {
-                        // Get SMS message contents
+                    // Get SMS message contents
                         val message = extras.get(SmsRetriever.EXTRA_SMS_MESSAGE) as? String
                         
                         if (message != null) {
@@ -142,8 +142,8 @@ class SMSBroadcastReceiver : BroadcastReceiver() {
                                 android.util.Log.w(TAG, "⚠️ SMS from untrusted sender, skipping auto-fill")
                                 return
                             }
-                            
-                            // Extract OTP from message
+                    
+                    // Extract OTP from message
                             val extractedOtp = extractOTP(message)
                             if (extractedOtp != null) {
                                 synchronized(this) {
@@ -211,17 +211,17 @@ class SMSBroadcastReceiver : BroadcastReceiver() {
         for (pattern in patterns) {
             try {
                 val matcher = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(message)
-                if (matcher.find()) {
-                    val otp = if (matcher.groupCount() > 0) {
-                        matcher.group(1) // Get the captured group
-                    } else {
-                        matcher.group(0) // Get the entire match
-                    }
-                    
+            if (matcher.find()) {
+                val otp = if (matcher.groupCount() > 0) {
+                    matcher.group(1) // Get the captured group
+                } else {
+                    matcher.group(0) // Get the entire match
+                }
+                
                     // Enhanced validation
                     if (otp != null && isValidOTP(otp, message)) {
                         android.util.Log.d(TAG, "✅ Valid OTP extracted using pattern: $pattern")
-                        return otp
+                    return otp
                     }
                 }
             } catch (e: Exception) {

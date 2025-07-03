@@ -91,6 +91,40 @@ fun CreateProjectScreen(
     // State for dynamic department input boxes
     var departmentInputBoxes by remember { mutableStateOf(listOf<DepartmentInputBox>()) }
 
+    // Enhanced search functions
+    fun searchApprovers(query: String): List<FirebaseUser> {
+        if (query.isEmpty()) return emptyList()
+        
+        return availableApprovers.filter { user ->
+            val normalizedQuery = query.lowercase().trim()
+            val nameMatch = user.name?.lowercase()?.contains(normalizedQuery) == true
+            
+            // Enhanced phone number matching
+            val cleanUserPhone = user.phone.replace(Regex("[^0-9]"), "")
+            val cleanSearchQuery = normalizedQuery.replace(Regex("[^0-9]"), "")
+            val phoneMatch = cleanUserPhone.contains(cleanSearchQuery) && cleanSearchQuery.length >= 3
+            
+            nameMatch || phoneMatch
+        }.take(5)
+    }
+    
+    fun searchUsers(query: String): List<FirebaseUser> {
+        if (query.isEmpty()) return emptyList()
+        
+        return availableUsers.filter { user ->
+            val normalizedQuery = query.lowercase().trim()
+            val nameMatch = user.name?.lowercase()?.contains(normalizedQuery) == true
+            
+            // Enhanced phone number matching
+            val cleanUserPhone = user.phone.replace(Regex("[^0-9]"), "")
+            val cleanSearchQuery = normalizedQuery.replace(Regex("[^0-9]"), "")
+            val phoneMatch = cleanUserPhone.contains(cleanSearchQuery) && cleanSearchQuery.length >= 3
+            
+            // Exclude already selected members
+            !selectedTeamMembers.contains(user) && (nameMatch || phoneMatch)
+        }.take(5)
+    }
+
     // Load users from Firebase
     fun loadUsersFromFirebase() {
         scope.launch {
@@ -115,7 +149,6 @@ fun CreateProjectScreen(
                             "PRODUCTION HEAD", "Production Head", "production head" -> UserRole.PRODUCTION_HEAD
                             else -> {
                                 android.util.Log.w("CreateProject", "Unknown role: '$roleString' for user $phone")
-                                // For users with unknown roles, default to USER
                                 UserRole.USER
                             }
                         }
@@ -133,14 +166,6 @@ fun CreateProjectScreen(
                 
                 isLoadingUsers = false
                 android.util.Log.d("CreateProject", "✅ Loaded ${availableApprovers.size} approvers and ${availableUsers.size} users")
-                
-                // Debug log to see what users were loaded
-                availableApprovers.forEach { user ->
-                    android.util.Log.d("CreateProject", "Approver: ${user.name} - ${user.phone}")
-                }
-                availableUsers.forEach { user ->
-                    android.util.Log.d("CreateProject", "User: ${user.name} - ${user.phone}")
-                }
                 
             } catch (e: Exception) {
                 isLoadingUsers = false
@@ -350,63 +375,92 @@ fun CreateProjectScreen(
                     // Approver Search
                     OutlinedTextField(
                         value = approverSearchQuery,
-                        onValueChange = { 
-                            approverSearchQuery = it
-                            showApproverDropdown = it.isNotEmpty() && availableApprovers.isNotEmpty()
+                        onValueChange = { query ->
+                            approverSearchQuery = query
+                            // Show dropdown immediately when typing starts and we have users
+                            showApproverDropdown = query.isNotEmpty() && availableApprovers.isNotEmpty()
                         },
                         label = { Text("Search Approver by name or phone") },
                         modifier = Modifier.fillMaxWidth(),
                         leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
+                            Icon(Icons.Default.Search, contentDescription = "Search", tint = Color(0xFF2E5CFF))
                         },
                         trailingIcon = {
-                            if (isLoadingUsers) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp
-                                )
+                            Row {
+                                if (approverSearchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { 
+                                        approverSearchQuery = ""
+                                        showApproverDropdown = false
+                                    }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.Gray)
+                                    }
+                                }
+                                if (isLoadingUsers) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color(0xFF2E5CFF)
+                                    )
+                                }
                             }
                         },
                         placeholder = { 
-                            Text(if (isLoadingUsers) "Loading users..." else "Enter name or phone number") 
+                            Text(
+                                if (isLoadingUsers) "Loading approvers..." 
+                                else "Type name or phone number...",
+                                color = Color.Gray
+                            )
                         },
                         enabled = !isLoadingUsers,
-                        isError = selectedApprover == null && approverSearchQuery.isEmpty()
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF2E5CFF),
+                            focusedLabelColor = Color(0xFF2E5CFF),
+                            unfocusedContainerColor = Color.White,
+                            focusedContainerColor = Color.White,
+                            cursorColor = Color(0xFF2E5CFF)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
                     )
                     
-                    // Only show error if user tried to search but no approver selected
-                    if (selectedApprover == null && approverSearchQuery.isNotEmpty()) {
+                    // Show available approvers count
+                    if (!isLoadingUsers && availableApprovers.isNotEmpty()) {
                         Text(
-                            "Please select an approver",
-                            color = MaterialTheme.colorScheme.error,
+                            "${availableApprovers.size} approvers available",
                             style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+                            color = Color.Gray,
+                            modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                        )
+                    }
+                    
+                    // Show no results message
+                    if (approverSearchQuery.isNotEmpty() && searchApprovers(approverSearchQuery).isEmpty() && !isLoadingUsers) {
+                        Text(
+                            "No approvers found matching \"$approverSearchQuery\"",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(start = 4.dp, top = 4.dp)
                         )
                     }
                     
                     // Approver Dropdown
                     if (showApproverDropdown && approverSearchQuery.isNotEmpty()) {
-                        val filteredApprovers = availableApprovers.filter { user ->
-                            val query = approverSearchQuery.lowercase().trim()
-                            val nameMatch = user.name?.lowercase()?.contains(query) == true
-                            
-                            // Clean phone numbers for matching
-                            val cleanUserPhone = user.phone.replace("+91", "").replace("+", "").replace(" ", "").replace("-", "")
-                            val cleanSearchQuery = query.replace("+91", "").replace("+", "").replace(" ", "").replace("-", "")
-                            val phoneMatch = cleanUserPhone.contains(cleanSearchQuery) || user.phone.contains(query)
-                            
-                            android.util.Log.d("CreateProject", "Searching approvers: query='$query', user=${user.name}(${user.phone}), nameMatch=$nameMatch, phoneMatch=$phoneMatch")
-                            
-                            nameMatch || phoneMatch
-                        }
+                        val filteredApprovers = searchApprovers(approverSearchQuery)
                         
                         if (filteredApprovers.isNotEmpty()) {
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                elevation = CardDefaults.cardElevation(8.dp)
+                                elevation = CardDefaults.cardElevation(8.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Column(modifier = Modifier.padding(8.dp)) {
-                                    filteredApprovers.take(5).forEach { user ->
+                                    Text(
+                                        "Select Approver",
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF2E5CFF),
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                    )
+                                    filteredApprovers.forEach { user ->
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -418,12 +472,18 @@ fun CreateProjectScreen(
                                                 .padding(12.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF2E5CFF))
+                                            Icon(
+                                                Icons.Default.Person, 
+                                                contentDescription = null, 
+                                                tint = Color(0xFF2E5CFF),
+                                                modifier = Modifier.size(24.dp)
+                                            )
                                             Spacer(Modifier.width(12.dp))
-                                            Column {
+                                            Column(modifier = Modifier.weight(1f)) {
                                                 Text(
                                                     user.name ?: "Unknown",
-                                                    fontWeight = FontWeight.Medium
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = Color.Black
                                                 )
                                                 Text(
                                                     user.phone,
@@ -431,6 +491,9 @@ fun CreateProjectScreen(
                                                     color = Color.Gray
                                                 )
                                             }
+                                        }
+                                        if (user != filteredApprovers.last()) {
+                                            Divider(color = Color.Gray.copy(alpha = 0.3f))
                                         }
                                     }
                                 }
@@ -490,64 +553,93 @@ fun CreateProjectScreen(
                 // Team Member Search
                 OutlinedTextField(
                     value = memberSearchQuery,
-                    onValueChange = { 
-                        memberSearchQuery = it
-                        showMemberDropdown = it.isNotEmpty() && availableUsers.isNotEmpty()
+                    onValueChange = { query ->
+                        memberSearchQuery = query
+                        // Show dropdown immediately when typing starts and we have users
+                        showMemberDropdown = query.isNotEmpty() && availableUsers.isNotEmpty()
                     },
                     label = { Text("Search Team Member by name or phone") },
                     modifier = Modifier.fillMaxWidth(),
                     leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
+                        Icon(Icons.Default.Search, contentDescription = "Search", tint = Color(0xFF2E5CFF))
                     },
                     trailingIcon = {
-                        if (isLoadingUsers) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
+                        Row {
+                            if (memberSearchQuery.isNotEmpty()) {
+                                IconButton(onClick = { 
+                                    memberSearchQuery = ""
+                                    showMemberDropdown = false
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.Gray)
+                                }
+                            }
+                            if (isLoadingUsers) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color(0xFF2E5CFF)
+                                )
+                            }
                         }
                     },
                     placeholder = { 
-                        Text(if (isLoadingUsers) "Loading users..." else "Enter name or phone number") 
+                        Text(
+                            if (isLoadingUsers) "Loading team members..." 
+                            else "Type name or phone number...",
+                            color = Color.Gray
+                        )
                     },
                     enabled = !isLoadingUsers,
-                    isError = selectedTeamMembers.isEmpty() && memberSearchQuery.isEmpty()
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF2E5CFF),
+                        focusedLabelColor = Color(0xFF2E5CFF),
+                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = Color.White,
+                        cursorColor = Color(0xFF2E5CFF)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
                 )
                 
-                // Only show error if user tried to search but no team members selected
-                if (selectedTeamMembers.isEmpty() && memberSearchQuery.isNotEmpty()) {
+                // Show available users count
+                if (!isLoadingUsers && availableUsers.isNotEmpty()) {
+                    val availableCount = availableUsers.size - selectedTeamMembers.size
                     Text(
-                        "Please select at least one team member",
-                        color = MaterialTheme.colorScheme.error,
+                        "$availableCount team members available",
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+                        color = Color.Gray,
+                        modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                    )
+                }
+                
+                // Show no results message
+                if (memberSearchQuery.isNotEmpty() && searchUsers(memberSearchQuery).isEmpty() && !isLoadingUsers) {
+                    Text(
+                        "No team members found matching \"$memberSearchQuery\"",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(start = 4.dp, top = 4.dp)
                     )
                 }
                 
                 // Team Member Dropdown
                 if (showMemberDropdown && memberSearchQuery.isNotEmpty()) {
-                    val filteredUsers = availableUsers.filter { user ->
-                        val query = memberSearchQuery.lowercase().trim()
-                        val nameMatch = user.name?.lowercase()?.contains(query) == true
-                        
-                        // Clean phone numbers for matching
-                        val cleanUserPhone = user.phone.replace("+91", "").replace("+", "").replace(" ", "").replace("-", "")
-                        val cleanSearchQuery = query.replace("+91", "").replace("+", "").replace(" ", "").replace("-", "")
-                        val phoneMatch = cleanUserPhone.contains(cleanSearchQuery) || user.phone.contains(query)
-                        
-                        android.util.Log.d("CreateProject", "Searching users: query='$query', user=${user.name}(${user.phone}), nameMatch=$nameMatch, phoneMatch=$phoneMatch")
-                        
-                        // Exclude already selected members
-                        !selectedTeamMembers.contains(user) && (nameMatch || phoneMatch)
-                    }
+                    val filteredUsers = searchUsers(memberSearchQuery)
                     
                     if (filteredUsers.isNotEmpty()) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            elevation = CardDefaults.cardElevation(8.dp)
+                            elevation = CardDefaults.cardElevation(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Column(modifier = Modifier.padding(8.dp)) {
-                                filteredUsers.take(5).forEach { user ->
+                                Text(
+                                    "Select Team Members",
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF2E5CFF),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                )
+                                filteredUsers.forEach { user ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -559,12 +651,18 @@ fun CreateProjectScreen(
                                             .padding(12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF2196F3))
+                                        Icon(
+                                            Icons.Default.Person, 
+                                            contentDescription = null, 
+                                            tint = Color(0xFF2196F3),
+                                            modifier = Modifier.size(24.dp)
+                                        )
                                         Spacer(Modifier.width(12.dp))
-                                        Column {
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 user.name ?: "Unknown",
-                                                fontWeight = FontWeight.Medium
+                                                fontWeight = FontWeight.Medium,
+                                                color = Color.Black
                                             )
                                             Text(
                                                 user.phone,
@@ -572,6 +670,9 @@ fun CreateProjectScreen(
                                                 color = Color.Gray
                                             )
                                         }
+                                    }
+                                    if (user != filteredUsers.last()) {
+                                        Divider(color = Color.Gray.copy(alpha = 0.3f))
                                     }
                                 }
                             }

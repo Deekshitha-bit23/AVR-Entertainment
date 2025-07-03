@@ -48,12 +48,14 @@ import com.deeksha.avrentertainment.utils.ReportData
 import com.deeksha.avrentertainment.utils.DepartmentReportItem
 import com.deeksha.avrentertainment.utils.ReportFilters
 
-// Data class for budget overview table
-data class BudgetOverviewItem(
+// Data class for detailed expense overview table
+data class DetailedExpenseItem(
+    val date: String,
+    val invoiceName: String,
+    val submittedBy: String,
+    val totalSum: Double,
     val department: String,
-    val budget: Double,
-    val spent: Double,
-    val percentage: Double
+    val modeOfPayment: String
 )
 
 // Data class for department analytics
@@ -96,7 +98,7 @@ fun NewReportsScreen(
     
     // Analytics data
     var departmentAnalytics by remember { mutableStateOf<List<DepartmentAnalytics>>(emptyList()) }
-    var budgetOverviewData by remember { mutableStateOf<List<BudgetOverviewItem>>(emptyList()) }
+    var detailedExpenseData by remember { mutableStateOf<List<DetailedExpenseItem>>(emptyList()) }
     var totalSpent by remember { mutableStateOf(0.0) }
     var totalBudget by remember { mutableStateOf(0.0) }
     
@@ -276,17 +278,34 @@ fun NewReportsScreen(
         }.filter { it.totalSpent > 0 || it.totalBudget > 0 } // Only show departments with activity
          .sortedByDescending { it.totalSpent }
         
-        // Create budget overview data using the same department analytics for consistency
-        budgetOverviewData = departmentAnalytics.map { analytics ->
-            val percentage = if (analytics.totalBudget > 0) (analytics.totalSpent / analytics.totalBudget) * 100 else 0.0
+        // Create detailed expense data from filtered expenses
+        detailedExpenseData = filteredExpenses.map { expense ->
+            val dateFormatter = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+            val expenseDate = java.util.Date(expense.submittedAt.seconds * 1000)
             
-            BudgetOverviewItem(
-                department = analytics.name,
-                budget = analytics.totalBudget,
-                spent = analytics.totalSpent,
-                percentage = percentage
+            // Format phone number properly - ensure full number is displayed
+            val submittedByDisplay = if (expense.submittedById.isNotBlank()) {
+                // If it's a phone number, format it properly
+                if (expense.submittedById.startsWith("+91") && expense.submittedById.length >= 13) {
+                    expense.submittedById // Show full phone number as is
+                } else if (expense.submittedById.length == 10 && expense.submittedById.all { it.isDigit() }) {
+                    "+91${expense.submittedById}" // Add country code if missing
+                } else {
+                    expense.submittedById // Use as is if not a phone number format
+                }
+            } else {
+                "Unknown User"
+            }
+            
+            DetailedExpenseItem(
+                date = dateFormatter.format(expenseDate),
+                invoiceName = expense.description.takeIf { it.isNotBlank() } ?: "Invoice #${expense.id.takeLast(6)}",
+                submittedBy = submittedByDisplay,
+                totalSum = expense.amount,
+                department = expense.department,
+                modeOfPayment = expense.modeOfPayment.takeIf { it.isNotBlank() } ?: "Not Specified"
             )
-        }.sortedByDescending { it.spent }
+        }.sortedByDescending { it.totalSum }
     }
     
     Column(
@@ -575,7 +594,7 @@ fun NewReportsScreen(
                     }
                 }
                 
-                // Budget Overview Table - Exactly like your image
+                // Detailed Expense Overview Table - Enhanced with all requested fields
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -587,7 +606,7 @@ fun NewReportsScreen(
                             modifier = Modifier.padding(16.dp)
                         ) {
                             Text(
-                                "Budget Overview Table",
+                                "Detailed Expense Overview",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = Color(0xFF2E2E2E)
                             )
@@ -599,24 +618,41 @@ fun NewReportsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
+                                    "Date",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E2E2E),
+                                    modifier = Modifier.weight(1f),
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    "Invoice",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E2E2E),
+                                    modifier = Modifier.weight(1.5f),
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    "By",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E2E2E),
+                                    modifier = Modifier.weight(1.2f), // Matched with data column
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    "Amount",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E2E2E),
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.weight(1f),
+                                    fontSize = 12.sp
+                                )
+                                Text(
                                     "Dept",
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF2E2E2E),
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    "Budget",
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2E2E2E),
-                                    textAlign = TextAlign.End,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    "Spent",
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2E2E2E),
-                                    textAlign = TextAlign.End,
-                                    modifier = Modifier.weight(1f)
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.weight(1f),
+                                    fontSize = 12.sp
                                 )
                             }
                             
@@ -624,32 +660,94 @@ fun NewReportsScreen(
                             HorizontalDivider(color = Color(0xFFE0E0E0))
                             Spacer(modifier = Modifier.height(8.dp))
                             
-                            // Table Rows
-                            budgetOverviewData.forEach { item ->
-                                Row(
+                            // Table Rows - Show all detailed expenses
+                            if (detailedExpenseData.isEmpty()) {
+                                Text(
+                                    "No expense data available",
+                                    color = Color(0xFF666666),
+                                    textAlign = TextAlign.Center,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
+                                        .padding(24.dp)
+                                )
+                            } else {
+                                detailedExpenseData.take(20).forEach { expense -> // Show top 20 expenses
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            expense.date,
+                                            color = Color(0xFF2E2E2E),
+                                            modifier = Modifier.weight(1f),
+                                            fontSize = 11.sp
+                                        )
+                                        Text(
+                                            expense.invoiceName,
+                                            color = Color(0xFF2E2E2E),
+                                            fontWeight = FontWeight.Medium,
+                                            modifier = Modifier.weight(1.5f),
+                                            fontSize = 11.sp,
+                                            maxLines = 2
+                                        )
+                                        Text(
+                                            expense.submittedBy, // Show full phone number/name
+                                            color = Color(0xFF666666),
+                                            modifier = Modifier.weight(1.2f), // Increased weight for phone numbers
+                                            fontSize = 9.sp, // Slightly smaller font to fit complete number
+                                            maxLines = 2, // Allow 2 lines if needed
+                                            lineHeight = 10.sp
+                                        )
+                                        Text(
+                                            formatIndianNumber(expense.totalSum),
+                                            color = Color(0xFF34A853),
+                                            fontWeight = FontWeight.SemiBold,
+                                            textAlign = TextAlign.End,
+                                            modifier = Modifier.weight(1f),
+                                            fontSize = 11.sp
+                                        )
+                                        Text(
+                                            expense.department,
+                                            color = Color(0xFF1565C0),
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.weight(1f),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                    
+                                    // Show mode of payment in a smaller row below
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 8.dp, bottom = 6.dp)
+                                    ) {
+                                        Text(
+                                            "Payment: ${expense.modeOfPayment}",
+                                            color = Color(0xFF888888),
+                                            fontSize = 9.sp,
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                        )
+                                    }
+                                    
+                                    if (expense != detailedExpenseData.take(20).last()) {
+                                        HorizontalDivider(
+                                            color = Color(0xFFF0F0F0),
+                                            modifier = Modifier.padding(vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                                
+                                if (detailedExpenseData.size > 20) {
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        item.department,
-                                        color = Color(0xFF2E2E2E),
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        formatIndianNumber(item.budget),
-                                        color = Color(0xFF2E2E2E),
-                                        textAlign = TextAlign.End,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        formatIndianNumber(item.spent),
-                                        color = Color(0xFF34A853),
-                                        fontWeight = FontWeight.SemiBold,
-                                        textAlign = TextAlign.End,
-                                        modifier = Modifier.weight(1f)
+                                        "Showing top 20 of ${detailedExpenseData.size} expenses",
+                                        color = Color(0xFF666666),
+                                        fontSize = 12.sp,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                             }
@@ -675,15 +773,15 @@ fun NewReportsScreen(
                             Button(
                                 onClick = {
                                     val reportData = ReportData(
-                                        title = "Expense Report",
+                                        title = "Detailed Expense Report",
                                         totalSpent = totalSpent,
                                         totalBudget = totalBudget,
-                                        departmentData = budgetOverviewData.map { item ->
+                                        departmentData = departmentAnalytics.map { analytics ->
                                             DepartmentReportItem(
-                                                department = item.department,
-                                                budget = item.budget,
-                                                spent = item.spent,
-                                                percentage = if (item.budget > 0) (item.spent / item.budget) * 100 else 0.0
+                                                department = analytics.name,
+                                                budget = analytics.totalBudget,
+                                                spent = analytics.totalSpent,
+                                                percentage = analytics.utilizationPercentage
                                             )
                                         },
                                         filters = ReportFilters(
@@ -727,15 +825,15 @@ fun NewReportsScreen(
                             Button(
                                 onClick = {
                                     val reportData = ReportData(
-                                        title = "Expense Report",
+                                        title = "Detailed Expense Report",
                                         totalSpent = totalSpent,
                                         totalBudget = totalBudget,
-                                        departmentData = budgetOverviewData.map { item ->
+                                        departmentData = departmentAnalytics.map { analytics ->
                                             DepartmentReportItem(
-                                                department = item.department,
-                                                budget = item.budget,
-                                                spent = item.spent,
-                                                percentage = if (item.budget > 0) (item.spent / item.budget) * 100 else 0.0
+                                                department = analytics.name,
+                                                budget = analytics.totalBudget,
+                                                spent = analytics.totalSpent,
+                                                percentage = analytics.utilizationPercentage
                                             )
                                         },
                                         filters = ReportFilters(

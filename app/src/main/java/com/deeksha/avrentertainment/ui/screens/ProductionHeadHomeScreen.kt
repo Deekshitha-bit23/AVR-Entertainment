@@ -292,7 +292,7 @@ fun ProductionHeadHomeScreen(
                 title = {
                     Text(
                         "AVR ENTERTAINMENT",
-                        color = Color.White,
+                        color = Color(0xFF4169E1),
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -300,37 +300,16 @@ fun ProductionHeadHomeScreen(
                 navigationIcon = {
                     Row {
                         IconButton(onClick = { onBack() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color(0xFF4169E1))
                         }
                         IconButton(onClick = {
                             scope.launch { drawerState.open() }
                         }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Color.White)
+                            Icon(Icons.Default.Menu, contentDescription = "Menu", tint = Color(0xFF4169E1))
                         }
                     }
                 },
                 actions = {
-                    // Create User Button
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clickable { navController.navigate("create_user") }
-                            .padding(horizontal = 8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Person,
-                            contentDescription = "Create User",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Text(
-                            "Create User",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
                     // Notifications
                     var showNotifications by remember { mutableStateOf(false) }
                     
@@ -347,7 +326,7 @@ fun ProductionHeadHomeScreen(
                                     Text("$unreadCount", color = Color.White, fontSize = 12.sp)
                                 }
                             }
-                            Icon(Icons.Default.Notifications, contentDescription = "Notifications", tint = Color.White)
+                            Icon(Icons.Default.Notifications, contentDescription = "Notifications", tint = Color(0xFF4169E1))
                         }
 
                         DropdownMenu(
@@ -794,7 +773,7 @@ fun DepartmentBudgetCard(
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "Left: ₹${String.format("%.0f", remaining)}",
+                        text = "Remaining: ₹${String.format("%.0f", remaining)}",
                         color = Color.White.copy(alpha = 0.9f),
                         fontSize = 10.sp
                     )

@@ -247,45 +247,45 @@ class LoginViewModel : ViewModel() {
             android.util.Log.d("LoginViewModel", "🔐 Verifying OTP for: $phoneNumber")
             
             try {
-                authRepository.verifyOtpAndGetUserRole(verificationId, otp, phoneNumber).fold(
-                    onSuccess = { (userRole, userExists) ->
+                    authRepository.verifyOtpAndGetUserRole(verificationId, otp, phoneNumber).fold(
+                        onSuccess = { (userRole, userExists) ->
                         android.util.Log.d("LoginViewModel", "✅ OTP Verification Success - Role: $userRole, Exists: $userExists")
                         
-                        when {
-                            !userExists -> {
-                                // User doesn't exist in the system at all
-                                _state.value = _state.value.copy(
-                                    isLoading = false,
-                                    isUnknownUser = true,
-                                    isAuthenticated = true,
-                                    hasNoRole = false
-                                )
+                            when {
+                                !userExists -> {
+                                    // User doesn't exist in the system at all
+                                    _state.value = _state.value.copy(
+                                        isLoading = false,
+                                        isUnknownUser = true,
+                                        isAuthenticated = true,
+                                        hasNoRole = false
+                                    )
                                 android.util.Log.d("LoginViewModel", "👤 Unknown user authenticated")
-                            }
-                            userRole != null -> {
-                                // User exists and has a role
-                                _state.value = _state.value.copy(
-                                    isLoading = false,
-                                    userRole = userRole,
-                                    isAuthenticated = true,
-                                    hasNoRole = false,
-                                    isUnknownUser = false
-                                )
+                                }
+                                userRole != null -> {
+                                    // User exists and has a role
+                                    _state.value = _state.value.copy(
+                                        isLoading = false,
+                                        userRole = userRole,
+                                        isAuthenticated = true,
+                                        hasNoRole = false,
+                                        isUnknownUser = false
+                                    )
                                 android.util.Log.d("LoginViewModel", "🎉 User authenticated with role: $userRole")
-                            }
-                            else -> {
-                                // User exists but has no role assigned
-                                _state.value = _state.value.copy(
-                                    isLoading = false,
-                                    hasNoRole = true,
-                                    isAuthenticated = true,
-                                    isUnknownUser = false
-                                )
+                                }
+                                else -> {
+                                    // User exists but has no role assigned
+                                    _state.value = _state.value.copy(
+                                        isLoading = false,
+                                        hasNoRole = true,
+                                        isAuthenticated = true,
+                                        isUnknownUser = false
+                                    )
                                 android.util.Log.d("LoginViewModel", "⚠️ User authenticated but no role assigned")
+                                }
                             }
-                        }
-                    },
-                    onFailure = { exception ->
+                        },
+                        onFailure = { exception ->
                         android.util.Log.e("LoginViewModel", "❌ OTP Verification Failed: ${exception.message}", exception)
                         
                         val errorMessage = when {
@@ -298,11 +298,11 @@ class LoginViewModel : ViewModel() {
                             else -> exception.message ?: "Invalid OTP. Please try again."
                         }
                         
-                        _state.value = _state.value.copy(
-                            isLoading = false,
+                    _state.value = _state.value.copy(
+                        isLoading = false,
                             error = errorMessage
-                        )
-                    }
+                    )
+                }
                 )
             } catch (e: Exception) {
                 android.util.Log.e("LoginViewModel", "❌ Exception in verifyOtp: ${e.message}", e)

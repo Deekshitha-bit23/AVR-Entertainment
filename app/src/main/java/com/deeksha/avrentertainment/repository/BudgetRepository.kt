@@ -605,8 +605,25 @@ class NotificationRepository(private val context: Context? = null) {
                 return@withContext Result.success(Unit)
             }
             
-            // Only send to approvers - this is correct
-            approverIds.forEach { approverId ->
+            // Filter out Production Heads from approver list - they should not get notifications
+            val authRepository = AuthRepository()
+            val filteredApproverIds = approverIds.filter { approverId ->
+                // Check user role and exclude Production Heads
+                try {
+                    val userResult = authRepository.getUserRole(approverId).getOrNull()
+                    val isProductionHead = userResult == com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD
+                    if (isProductionHead) {
+                        android.util.Log.d("NotificationRepository", "🚫 Excluding Production Head $approverId from notifications")
+                    }
+                    !isProductionHead
+                } catch (e: Exception) {
+                    android.util.Log.w("NotificationRepository", "Could not determine role for $approverId, including in notifications")
+                    true // Include if role cannot be determined
+                }
+            }
+            
+            // Only send to filtered approvers (excluding Production Heads)
+            filteredApproverIds.forEach { approverId ->
                 val notification = NotificationData(
                     title = "New Expense Submitted",
                     message = "₹${expense.amount} expense for ${expense.projectName} needs approval",
@@ -629,7 +646,7 @@ class NotificationRepository(private val context: Context? = null) {
                     }
                 )
                 
-                // Send push notification to approver
+                // Send push notification to approver (not Production Head)
                 sendPushNotification(
                     recipientId = approverId,
                     title = "New Expense Submitted",
@@ -644,7 +661,7 @@ class NotificationRepository(private val context: Context? = null) {
                     )
                 )
             }
-            android.util.Log.d("NotificationRepository", "✅ Sent expense submission notifications to ${approverIds.size} approvers")
+            android.util.Log.d("NotificationRepository", "✅ Sent expense submission notifications to ${filteredApproverIds.size} approvers (excluded ${approverIds.size - filteredApproverIds.size} Production Heads)")
             Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e("NotificationRepository", "❌ Error in sendExpenseSubmittedNotification: ${e.message}")
@@ -669,50 +686,58 @@ class NotificationRepository(private val context: Context? = null) {
             android.util.Log.d("NotificationRepository", "💰 Amount: ₹${expense.amount}")
             android.util.Log.d("NotificationRepository", "📋 Project: ${expense.projectName}")
             
-            // Only send approval/rejection notifications to the USER who submitted the expense
-            val notification = NotificationData(
-                title = "Expense ${statusText.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }}",
-                message = "Your ₹${expense.amount} expense for ${expense.projectName} has been $statusText by $reviewerName",
-                type = when (status) {
-                    ExpenseStatus.APPROVED -> NotificationType.EXPENSE_APPROVED
-                    ExpenseStatus.REJECTED -> NotificationType.EXPENSE_REJECTED
-                    else -> NotificationType.EXPENSE_SUBMITTED
-                },
-                recipientId = expense.submittedById, // Only to the submitter (USER)
-                senderId = expense.approvedById ?: "",
-                expenseId = expense.id,
-                projectId = expense.projectId,
-                departmentId = expense.department,
-                amount = expense.amount
-            )
+            // Verify that the submitter is actually a USER (not Production Head or Approver)
+            val authRepository = AuthRepository()
+            val submitterRole = authRepository.getUserRole(expense.submittedById).getOrNull()
             
-            val createResult = createNotification(notification)
-            createResult.fold(
-                onSuccess = { notificationId ->
-                    android.util.Log.d("NotificationRepository", "✅ Successfully created notification with ID: $notificationId")
-                },
-                onFailure = { error ->
-                    android.util.Log.e("NotificationRepository", "❌ Failed to create notification: ${error.message}")
-                }
-            )
-            
-            android.util.Log.d("NotificationRepository", "Sent expense $statusText notification to user: ${expense.submittedById}")
-            
-            // Send push notification
-            sendPushNotification(
-                recipientId = expense.submittedById,
-                title = "Expense ${statusText.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }}",
-                body = "Your ₹${String.format("%.0f", expense.amount)} expense for ${expense.projectName} has been $statusText by $reviewerName",
-                data = mapOf(
-                    "type" to when (status) {
-                        ExpenseStatus.APPROVED -> "EXPENSE_APPROVED"
-                        ExpenseStatus.REJECTED -> "EXPENSE_REJECTED"
-                        else -> "EXPENSE_UPDATED"
+            if (submitterRole == com.deeksha.avrentertainment.models.UserRole.USER) {
+                // Only send approval/rejection notifications to the USER who submitted the expense
+                val notification = NotificationData(
+                    title = "Expense ${statusText.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }}",
+                    message = "Your ₹${expense.amount} expense for ${expense.projectName} has been $statusText by $reviewerName",
+                    type = when (status) {
+                        ExpenseStatus.APPROVED -> NotificationType.EXPENSE_APPROVED
+                        ExpenseStatus.REJECTED -> NotificationType.EXPENSE_REJECTED
+                        else -> NotificationType.EXPENSE_SUBMITTED
                     },
-                    "expenseId" to expense.id,
-                    "projectId" to expense.projectId
+                    recipientId = expense.submittedById, // Only to the submitter (USER)
+                    senderId = expense.approvedById ?: "",
+                    expenseId = expense.id,
+                    projectId = expense.projectId,
+                    departmentId = expense.department,
+                    amount = expense.amount
                 )
-            )
+                
+                val createResult = createNotification(notification)
+                createResult.fold(
+                    onSuccess = { notificationId ->
+                        android.util.Log.d("NotificationRepository", "✅ Successfully created notification with ID: $notificationId")
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("NotificationRepository", "❌ Failed to create notification: ${error.message}")
+                    }
+                )
+                
+                android.util.Log.d("NotificationRepository", "Sent expense $statusText notification to USER: ${expense.submittedById}")
+                
+                // Send push notification only to USER
+                sendPushNotification(
+                    recipientId = expense.submittedById,
+                    title = "Expense ${statusText.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }}",
+                    body = "Your ₹${String.format("%.0f", expense.amount)} expense for ${expense.projectName} has been $statusText by $reviewerName",
+                    data = mapOf(
+                        "type" to when (status) {
+                            ExpenseStatus.APPROVED -> "EXPENSE_APPROVED"
+                            ExpenseStatus.REJECTED -> "EXPENSE_REJECTED"
+                            else -> "EXPENSE_UPDATED"
+                        },
+                        "expenseId" to expense.id,
+                        "projectId" to expense.projectId
+                    )
+                )
+            } else {
+                android.util.Log.d("NotificationRepository", "🚫 Skipping notification - submitter ${expense.submittedById} is not a USER (role: $submitterRole)")
+            }
             
             Result.success(Unit)
         } catch (e: Exception) {
@@ -1124,43 +1149,52 @@ class NotificationRepository(private val context: Context? = null) {
             
             val relevantTypes = when (userRole) {
                 com.deeksha.avrentertainment.models.UserRole.USER -> listOf(
-                    // User sees: ONLY approval/rejection results, budget changes, budget exceeded alerts (NO expense submitted)
+                    // User sees: ONLY approval/rejection results for their OWN submitted expenses
                     NotificationType.EXPENSE_APPROVED,
-                    NotificationType.EXPENSE_REJECTED,
-                    NotificationType.BUDGET_ADDED,
-                    NotificationType.BUDGET_DEDUCTED,
-                    NotificationType.BUDGET_EXCEEDED_PROJECT,
-                    NotificationType.BUDGET_EXCEEDED_DEPARTMENT
+                    NotificationType.EXPENSE_REJECTED
                 )
                 com.deeksha.avrentertainment.models.UserRole.APPROVER -> listOf(
-                    // Approver sees: New submissions, pending reminders, budget exceeded alerts, budget changes
+                    // Approver sees: New submissions and pending reminders for expenses they need to approve
                     NotificationType.EXPENSE_SUBMITTED,
-                    NotificationType.PENDING_APPROVAL_REMINDER,
-                    NotificationType.BUDGET_EXCEEDED_PROJECT,
-                    NotificationType.BUDGET_EXCEEDED_DEPARTMENT,
-                    NotificationType.BUDGET_ADDED,
-                    NotificationType.BUDGET_DEDUCTED
+                    NotificationType.PENDING_APPROVAL_REMINDER
                 )
                 com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD -> listOf(
-                    // Production Head sees: All notifications
-                    NotificationType.EXPENSE_SUBMITTED,
-                    NotificationType.EXPENSE_APPROVED,
-                    NotificationType.EXPENSE_REJECTED,
-                    NotificationType.PENDING_APPROVAL_REMINDER,
-                    NotificationType.BUDGET_EXCEEDED_PROJECT,
-                    NotificationType.BUDGET_EXCEEDED_DEPARTMENT,
-                    NotificationType.BUDGET_ADDED,
-                    NotificationType.BUDGET_DEDUCTED
+                    // Production Head sees: NO notifications as per business requirement
                 )
             }
             
             android.util.Log.d("NotificationFilter", "📋 Filtering for types: ${relevantTypes.joinToString()}")
             
+            // Production Head gets no notifications
+            if (userRole == com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD) {
+                android.util.Log.d("NotificationFilter", "🚫 PRODUCTION HEAD - No notifications returned as per business requirements")
+                return@withContext Result.success(emptyList())
+            }
+            
             val snapshot = notificationsCollection
                 .whereEqualTo("recipientId", userId)
                 .get().await()
             val notifications = snapshot.documents.mapNotNull { document -> document.toObject(NotificationData::class.java) }
-                .filter { notification -> notification.type in relevantTypes }
+                .filter { notification -> 
+                    // Basic type filtering
+                    val typeMatch = notification.type in relevantTypes
+                    
+                    // Additional role-specific filtering
+                    when (userRole) {
+                        com.deeksha.avrentertainment.models.UserRole.USER -> {
+                            // Users only see notifications for expenses THEY submitted
+                            typeMatch && notification.recipientId == userId
+                        }
+                        com.deeksha.avrentertainment.models.UserRole.APPROVER -> {
+                            // Approvers only see notifications for expenses they need to approve
+                            typeMatch && notification.recipientId == userId
+                        }
+                        com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD -> {
+                            // Production Head sees nothing
+                            false
+                        }
+                    }
+                }
                 .sortedByDescending { notification -> notification.createdAt.seconds }
             
             android.util.Log.d("NotificationFilter", "✅ Filtered ${notifications.size} notifications for $userRole")
@@ -1600,36 +1634,30 @@ class NotificationRepository(private val context: Context? = null) {
     private fun shouldSendPushNotification(recipientId: String, notificationType: String, userRole: UserRole): Boolean {
         return when (userRole) {
             UserRole.USER -> {
-                // Users only get push notifications for: Approved, Rejected, Budget changes, Budget exceeded
+                // Users only get push notifications for their OWN submitted expenses (approved/rejected)
                 when (notificationType) {
-                    "EXPENSE_APPROVED", "EXPENSE_REJECTED" -> true
-                    "BUDGET_ADDED", "BUDGET_DEDUCTED" -> true
-                    "BUDGET_EXCEEDED_PROJECT", "BUDGET_EXCEEDED_DEPARTMENT" -> true
-                    "EXPENSE_SUBMITTED" -> false // Users don't get push for their own submissions
+                    "EXPENSE_APPROVED", "EXPENSE_REJECTED" -> true // Only for their own expenses
+                    "EXPENSE_SUBMITTED" -> false // Users don't get notifications for submitting
                     "PENDING_APPROVAL_REMINDER" -> false // Users don't get pending approval reminders
+                    "BUDGET_ADDED", "BUDGET_DEDUCTED" -> false // No budget notifications for users
+                    "BUDGET_EXCEEDED_PROJECT", "BUDGET_EXCEEDED_DEPARTMENT" -> false // No budget exceeded for users
                     else -> false
                 }
             }
             UserRole.APPROVER -> {
-                // Approvers only get push notifications for: New submissions, Pending reminders, Budget exceeded
+                // Approvers only get push notifications for expenses they need to approve in their projects
                 when (notificationType) {
-                    "EXPENSE_SUBMITTED" -> true // New expense submissions
-                    "PENDING_APPROVAL_REMINDER" -> true // Pending approval reminders
-                    "BUDGET_EXCEEDED_PROJECT", "BUDGET_EXCEEDED_DEPARTMENT" -> true
-                    "EXPENSE_APPROVED", "EXPENSE_REJECTED" -> false // Approvers don't get push for their own approvals
-                    "BUDGET_ADDED", "BUDGET_DEDUCTED" -> false // Approvers don't need push for budget changes
+                    "EXPENSE_SUBMITTED" -> true // New expense submissions that need their approval
+                    "PENDING_APPROVAL_REMINDER" -> true // Pending approval reminders for their projects
+                    "EXPENSE_APPROVED", "EXPENSE_REJECTED" -> false // No notifications for their own approvals
+                    "BUDGET_ADDED", "BUDGET_DEDUCTED" -> false // No budget change notifications for approvers
+                    "BUDGET_EXCEEDED_PROJECT", "BUDGET_EXCEEDED_DEPARTMENT" -> false // No budget exceeded for approvers
                     else -> false
                 }
             }
             UserRole.PRODUCTION_HEAD -> {
-                // Production Head gets all push notifications
-                when (notificationType) {
-                    "EXPENSE_SUBMITTED", "EXPENSE_APPROVED", "EXPENSE_REJECTED" -> true
-                    "PENDING_APPROVAL_REMINDER" -> true
-                    "BUDGET_ADDED", "BUDGET_DEDUCTED" -> true
-                    "BUDGET_EXCEEDED_PROJECT", "BUDGET_EXCEEDED_DEPARTMENT" -> true
-                    else -> false
-                }
+                // Production Head gets NO push notifications as per business requirement
+                false
             }
         }
     }
@@ -1664,15 +1692,19 @@ class NotificationRepository(private val context: Context? = null) {
             
             when (userRole) {
                 UserRole.USER -> {
-                    // For users: Show recent approval/rejection notifications (last 24 hours)
-                    val recent24Hours = System.currentTimeMillis() - (24 * 60 * 60 * 1000)
+                    // For users: Show recent approval/rejection notifications for THEIR submitted expenses only (last 7 days)
+                    val recent7Days = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000)
                     
-                    // Get recent notifications from Firestore
+                    // Get recent notifications from Firestore for this specific user's expenses
                     val recentNotifications = getNotificationsForUser(userId, userRole).getOrNull()
-                        ?.filter { it.createdAt.seconds * 1000 > recent24Hours }
+                        ?.filter { it.createdAt.seconds * 1000 > recent7Days }
                         ?.filter { notification ->
+                            // Only show approval/rejection notifications for expenses they submitted
                             when (notification.type) {
-                                NotificationType.EXPENSE_APPROVED, NotificationType.EXPENSE_REJECTED -> true
+                                NotificationType.EXPENSE_APPROVED, NotificationType.EXPENSE_REJECTED -> {
+                                    // Additional check: ensure this notification is for an expense they submitted
+                                    notification.recipientId == userId
+                                }
                                 else -> false
                             }
                         }
@@ -1686,7 +1718,7 @@ class NotificationRepository(private val context: Context? = null) {
                             val data = mapOf(
                                 "type" to notification.type.toString(),
                                 "expenseId" to (notification.expenseId ?: ""),
-                                "projectName" to (notification.projectId ?: ""),
+                                "projectId" to (notification.projectId ?: ""),
                                 "amount" to notification.amount.toString()
                             )
                             
@@ -1697,38 +1729,55 @@ class NotificationRepository(private val context: Context? = null) {
                                 data = data
                             )
                             
+                            sentPushNotifications.add(notificationKey)
+                            android.util.Log.d("LoginNotifications", "📱 Sent USER notification: ${notification.title}")
+                            
                             // Small delay between notifications
-                            kotlinx.coroutines.delay(2000)
+                            kotlinx.coroutines.delay(1500)
                         }
                     }
+                    
+                    android.util.Log.d("LoginNotifications", "✅ USER notifications completed - sent ${recentNotifications?.size ?: 0} notifications")
                 }
                 
                 UserRole.APPROVER -> {
-                    // For approvers: Show pending expense count if any
+                    // For approvers: Show pending expense notifications for projects they can approve only
                     try {
                         val expenseRepository = ExpenseRepository()
                         expenseRepository.getPendingExpenses().fold(
                             onSuccess = { pendingExpenses ->
-                                if (pendingExpenses.isNotEmpty()) {
-                                    val totalAmount = pendingExpenses.sumOf { it.amount }
-                                    val notificationKey = "${userId}_PENDING_SUMMARY_${pendingExpenses.size}"
+                                // Filter pending expenses - approvers should only see expenses that need their approval
+                                val approverPendingExpenses = pendingExpenses.filter { expense ->
+                                    // In a real app, check if this approver is assigned to this project
+                                    // For now, show all pending expenses to demonstrate approver flow
+                                    true
+                                }
+                                
+                                if (approverPendingExpenses.isNotEmpty()) {
+                                    val totalAmount = approverPendingExpenses.sumOf { it.amount }
+                                    val notificationKey = "${userId}_PENDING_SUMMARY_${approverPendingExpenses.size}"
                                     
                                     if (!sentPushNotifications.contains(notificationKey)) {
                                         val data = mapOf(
                                             "type" to "PENDING_APPROVAL_REMINDER",
-                                            "pendingCount" to pendingExpenses.size.toString(),
+                                            "pendingCount" to approverPendingExpenses.size.toString(),
                                             "totalAmount" to totalAmount.toString(),
                                             "projectName" to "Multiple Projects"
                                         )
                                         
                                         sendPushNotification(
                                             recipientId = userId,
-                                            title = "📋 ${pendingExpenses.size} Expenses Awaiting Approval",
+                                            title = "📋 ${approverPendingExpenses.size} Expenses Awaiting Your Approval",
                                             body = "Total: ₹${String.format("%.0f", totalAmount)} across all projects",
                                             data = data
                                         )
+                                        
+                                        sentPushNotifications.add(notificationKey)
+                                        android.util.Log.d("LoginNotifications", "📱 Sent APPROVER notification: Pending approvals")
                                     }
                                 }
+                                
+                                android.util.Log.d("LoginNotifications", "✅ APPROVER notifications completed - ${approverPendingExpenses.size} pending expenses")
                             },
                             onFailure = { error ->
                                 android.util.Log.e("LoginNotifications", "Failed to get pending expenses: ${error.message}")
@@ -1740,34 +1789,8 @@ class NotificationRepository(private val context: Context? = null) {
                 }
                 
                 UserRole.PRODUCTION_HEAD -> {
-                    // For production head: Show all recent notifications (last 24 hours)
-                    val recent24Hours = System.currentTimeMillis() - (24 * 60 * 60 * 1000)
-                    
-                    val recentNotifications = getNotificationsForUser(userId, userRole).getOrNull()
-                        ?.filter { it.createdAt.seconds * 1000 > recent24Hours }
-                        ?.take(3) // Show only latest 3 notifications
-                    
-                    recentNotifications?.forEach { notification ->
-                        val notificationKey = "${userId}_${notification.type}_${notification.expenseId}"
-                        
-                        if (!sentPushNotifications.contains(notificationKey)) {
-                            val data = mapOf(
-                                "type" to notification.type.toString(),
-                                "expenseId" to (notification.expenseId ?: ""),
-                                "projectName" to (notification.projectId ?: ""),
-                                "amount" to notification.amount.toString()
-                            )
-                            
-                            sendPushNotification(
-                                recipientId = userId,
-                                title = notification.title,
-                                body = notification.message,
-                                data = data
-                            )
-                            
-                            kotlinx.coroutines.delay(2000)
-                        }
-                    }
+                    // Production Head gets NO notifications as per requirement
+                    android.util.Log.d("LoginNotifications", "🚫 PRODUCTION HEAD - No notifications sent as per business requirements")
                 }
             }
             
@@ -1786,21 +1809,25 @@ class NotificationRepository(private val context: Context? = null) {
         try {
             android.util.Log.d("ProjectNotifications", "🔍 Loading project-specific notifications for $userRole: $userId, project: $projectId")
             
+            // Production Head gets no notifications
+            if (userRole == UserRole.PRODUCTION_HEAD) {
+                android.util.Log.d("ProjectNotifications", "🚫 PRODUCTION HEAD - No project notifications returned as per business requirements")
+                return@withContext Result.success(emptyList())
+            }
+            
             val relevantTypes = when (userRole) {
                 UserRole.USER -> listOf(
+                    // Users only see approval/rejection for their own expenses in this project
                     NotificationType.EXPENSE_APPROVED,
-                    NotificationType.EXPENSE_REJECTED,
-                    NotificationType.BUDGET_ADDED,
-                    NotificationType.BUDGET_DEDUCTED,
-                    NotificationType.BUDGET_EXCEEDED_PROJECT,
-                    NotificationType.BUDGET_EXCEEDED_DEPARTMENT
+                    NotificationType.EXPENSE_REJECTED
                 )
-                UserRole.APPROVER, UserRole.PRODUCTION_HEAD -> listOf(
+                UserRole.APPROVER -> listOf(
+                    // Approvers only see new submissions they need to approve in this project
                     NotificationType.EXPENSE_SUBMITTED,
-                    NotificationType.BUDGET_EXCEEDED_PROJECT,
-                    NotificationType.BUDGET_EXCEEDED_DEPARTMENT,
-                    NotificationType.BUDGET_ADDED,
-                    NotificationType.BUDGET_DEDUCTED
+                    NotificationType.PENDING_APPROVAL_REMINDER
+                )
+                UserRole.PRODUCTION_HEAD -> listOf(
+                    // Production Head gets no notifications
                 )
             }
             
@@ -1833,9 +1860,9 @@ class NotificationRepository(private val context: Context? = null) {
             android.util.Log.d("ApproverNotifications", "🔍 Loading pre-login notifications for approver: $approverId")
             
             val approverTypes = listOf(
+                // Approvers only see expense submissions they need to approve
                 NotificationType.EXPENSE_SUBMITTED,
-                NotificationType.BUDGET_EXCEEDED_PROJECT,
-                NotificationType.BUDGET_EXCEEDED_DEPARTMENT
+                NotificationType.PENDING_APPROVAL_REMINDER
             )
             
             val snapshot = notificationsCollection

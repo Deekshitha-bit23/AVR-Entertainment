@@ -26,7 +26,7 @@ class AuthRepository {
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseFirestore.getInstance()
     private val usersCollection = db.collection("users")
-    
+
     private var currentVerificationId: String? = null
     private var resendToken: PhoneAuthProvider.ForceResendingToken? = null
 
