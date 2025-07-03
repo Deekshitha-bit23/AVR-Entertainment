@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Badge
@@ -1882,8 +1883,32 @@ fun ProjectSelectionCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color(0xFF666666)
                 )
+                
+                // End Date Display
+                if (project.endDate.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DateRange,
+                            contentDescription = "End Date",
+                            tint = Color(0xFF2E5CFF),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Ends: ${project.endDate}",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = Color(0xFF2E5CFF)
+                        )
+                    }
+                }
+                
                 if (project.description.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = project.description,
                         style = MaterialTheme.typography.bodySmall,
