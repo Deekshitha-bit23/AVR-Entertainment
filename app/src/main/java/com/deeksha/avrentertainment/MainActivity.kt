@@ -170,6 +170,7 @@ import com.deeksha.avrentertainment.utils.ExportUtils
 import com.deeksha.avrentertainment.utils.ReportData
 import com.deeksha.avrentertainment.utils.DepartmentReportItem
 import com.deeksha.avrentertainment.utils.ReportFilters
+import java.text.SimpleDateFormat
 
 // Indian currency formatter function
 fun formatIndianCurrency(amount: Double): String {
@@ -567,7 +568,19 @@ class MainActivity : ComponentActivity() {
             )
         }
     }
-}
+    // Function to calculate days left
+    private fun calculateDaysLeft(endDate: String): Int {
+        return try {
+            val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+            val end = dateFormat.parse(endDate)
+            val today = Calendar.getInstance().time
+            val diff = end.time - today.time
+            (diff / (1000 * 60 * 60 * 24)).toInt()
+        } catch (e: Exception) {
+            -1 // Return -1 if there's an error parsing the date
+        }
+    }
+
 
 @Composable
 fun AppNavHost(navController: NavHostController, modifier: Modifier = Modifier, projectRepository: ProjectRepository, expenseRepository: ExpenseRepository, notificationRepository: NotificationRepository) {
@@ -1823,9 +1836,6 @@ fun ProjectSelectionScreen(
         }
 
     }
-
-
-
 @Composable
 fun ProjectSelectionCard(
     project: Project,
@@ -1873,61 +1883,57 @@ fun ProjectSelectionCard(
                 Text(
                     text = project.name,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF333333)
+                        fontWeight = FontWeight.SemiBold
                     )
                 )
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Budget: ₹${String.format("%,.0f", project.budget)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF666666)
+                    text = "Budget: ₹${project.budget}",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = Color.Gray
+                    )
                 )
-                
-                // End Date Display
-                if (project.endDate.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
+
+                // Days left indicator
+                val daysLeft = calculateDaysLeft(project.endDate)
+                if (daysLeft >= 0) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.DateRange,
-                            contentDescription = "End Date",
-                            tint = Color(0xFF2E5CFF),
+                            Icons.Default.DateRange,
+                            contentDescription = "Days Left",
+                            tint = when {
+                                daysLeft <= 7 -> Color.Red
+                                daysLeft <= 14 -> Color(0xFFFF9800) // Orange
+                                else -> Color(0xFF4CAF50) // Green
+                            },
                             modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Ends: ${project.endDate}",
-                            style = MaterialTheme.typography.bodyMedium.copy(
+                            text = "Ends: ${project.endDate} ($daysLeft days left)",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = when {
+                                    daysLeft <= 7 -> Color.Red
+                                    daysLeft <= 14 -> Color(0xFFFF9800) // Orange
+                                    else -> Color(0xFF4CAF50) // Green
+                                },
                                 fontWeight = FontWeight.Medium
-                            ),
-                            color = Color(0xFF2E5CFF)
+                            )
                         )
                     }
                 }
-                
-                if (project.description.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = project.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF999999),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
             }
 
-            // Arrow indicator
+            // Forward arrow
             Icon(
-                imageVector = Icons.Default.ArrowForward,
-                contentDescription = "Select",
-                tint = Color(0xFF2E5CFF),
-                modifier = Modifier.size(20.dp)
+                Icons.Default.ArrowForward,
+                contentDescription = "Select Project",
+                tint = Color(0xFF2E5CFF)
             )
         }
     }
+}
 }
 
 @Composable
