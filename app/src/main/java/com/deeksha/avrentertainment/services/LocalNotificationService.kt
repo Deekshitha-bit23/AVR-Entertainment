@@ -165,6 +165,31 @@ class LocalNotificationService(private val context: Context) {
         )
     }
     
+    // Send project assignment notification (Dynamic & Role-Specific)
+    fun sendProjectAssignmentNotification(
+        projectName: String,
+        role: String
+    ) {
+        val title = "🎯 New Project Assignment"
+        
+        // Create role-specific message
+        val message = when {
+            role.contains("Manager") -> "You're now the Project Manager for '$projectName'. You can approve expenses and manage the budget."
+            role.contains("Approver") -> "You've been assigned as $role for '$projectName'. You can approve team expenses."
+            role.contains("Team Member") && role.contains("&") -> "You're now a $role on '$projectName'. You have multiple responsibilities on this project."
+            role.contains("Team Member") -> "You're now a Team Member on '$projectName'. You can submit expenses and track activities."
+            else -> "You've been assigned as $role for '$projectName'"
+        }
+        
+        android.util.Log.d("LocalNotification", "🎯 Showing DYNAMIC project assignment: $role for $projectName")
+        
+        showNotification(
+            title = title,
+            message = message,
+            notificationId = Random.nextInt()
+        )
+    }
+    
     private fun showNotification(
         title: String,
         message: String,

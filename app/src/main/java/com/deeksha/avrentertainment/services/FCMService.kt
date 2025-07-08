@@ -95,6 +95,15 @@ class FCMService : FirebaseMessagingService() {
             "PROJECT_CREATED" -> {
                 // Handle project created notification
             }
+            "PROJECT_ASSIGNMENT" -> {
+                // Handle project assignment notification
+                val projectName = data["projectName"] ?: "Unknown Project"
+                val role = data["role"] ?: "Unknown Role"
+                
+                // Send local notification for project assignment
+                val notificationService = LocalNotificationService(this)
+                notificationService.sendProjectAssignmentNotification(projectName, role)
+            }
         }
     }
 

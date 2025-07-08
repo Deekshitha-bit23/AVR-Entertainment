@@ -1149,24 +1149,27 @@ class NotificationRepository(private val context: Context? = null) {
             
             val relevantTypes = when (userRole) {
                 com.deeksha.avrentertainment.models.UserRole.USER -> listOf(
-                    // User sees: ONLY approval/rejection results for their OWN submitted expenses
+                    // User sees: ONLY approval/rejection results for their OWN submitted expenses + project assignments
                     NotificationType.EXPENSE_APPROVED,
-                    NotificationType.EXPENSE_REJECTED
+                    NotificationType.EXPENSE_REJECTED,
+                    NotificationType.PROJECT_ASSIGNMENT // Users see project assignment notifications
                 )
                 com.deeksha.avrentertainment.models.UserRole.APPROVER -> listOf(
-                    // Approver sees: New submissions and pending reminders for expenses they need to approve
+                    // Approver sees: New submissions and pending reminders for expenses they need to approve + project assignments
                     NotificationType.EXPENSE_SUBMITTED,
-                    NotificationType.PENDING_APPROVAL_REMINDER
+                    NotificationType.PENDING_APPROVAL_REMINDER,
+                    NotificationType.PROJECT_ASSIGNMENT // Approvers see project assignment notifications
                 )
                 com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD -> listOf(
-                    // Production Head sees: NO notifications as per business requirement
+                    // Production Head sees: NO notifications except project assignments
+                    NotificationType.PROJECT_ASSIGNMENT // Production heads can see project assignment notifications
                 )
             }
             
             android.util.Log.d("NotificationFilter", "📋 Filtering for types: ${relevantTypes.joinToString()}")
             
-            // Production Head gets no notifications
-            if (userRole == com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD) {
+            // Production Head gets no notifications except project assignments
+            if (userRole == com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD && relevantTypes.isEmpty()) {
                 android.util.Log.d("NotificationFilter", "🚫 PRODUCTION HEAD - No notifications returned as per business requirements")
                 return@withContext Result.success(emptyList())
             }
@@ -1182,16 +1185,39 @@ class NotificationRepository(private val context: Context? = null) {
                     // Additional role-specific filtering
                     when (userRole) {
                         com.deeksha.avrentertainment.models.UserRole.USER -> {
-                            // Users only see notifications for expenses THEY submitted
+                            // Users only see notifications for expenses THEY submitted + their project assignments
+                            when (notification.type) {
+                                NotificationType.PROJECT_ASSIGNMENT -> {
+                                    // Project assignment notifications are always valid if they match the type filter
                             typeMatch && notification.recipientId == userId
+                                }
+                                else -> {
+                                    // Other notifications must be for expenses they submitted
+                                    typeMatch && notification.recipientId == userId
+                                }
+                            }
                         }
                         com.deeksha.avrentertainment.models.UserRole.APPROVER -> {
-                            // Approvers only see notifications for expenses they need to approve
+                            // Approvers see notifications for expenses they need to approve + their project assignments
+                            when (notification.type) {
+                                NotificationType.PROJECT_ASSIGNMENT -> {
+                                    // Project assignment notifications are always valid if they match the type filter
                             typeMatch && notification.recipientId == userId
+                                }
+                                else -> {
+                                    // Other notifications must be for expenses they need to approve
+                                    typeMatch && notification.recipientId == userId
+                                }
+                            }
                         }
                         com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD -> {
-                            // Production Head sees nothing
-                            false
+                            // Production Head only sees project assignments
+                            when (notification.type) {
+                                NotificationType.PROJECT_ASSIGNMENT -> {
+                                    typeMatch && notification.recipientId == userId
+                                }
+                                else -> false
+                            }
                         }
                     }
                 }
@@ -1379,81 +1405,96 @@ class NotificationRepository(private val context: Context? = null) {
                 return@withContext Result.success(Unit)
             }
 
-            android.util.Log.d("NotificationRepository", "Creating balanced sample notifications for users (NO expense submitted notifications)...")
+            android.util.Log.d("NotificationRepository", "Creating balanced sample notifications for users...")
 
-            // Create sample notifications for user +919876543210 (ONLY approved/rejected, budget changes, budget exceeded)
-            val sampleNotifications = listOf(
-                // Recent expense status notifications (ONLY approved/rejected)
-                NotificationData(
-                    title = "Expense Approved",
-                    message = "Your ₹5,000 expense for Movie Production A has been approved by John Doe",
-                    type = NotificationType.EXPENSE_APPROVED,
-                    recipientId = "+919876543210",
-                    senderId = "approver1",
-                    expenseId = "exp1",
-                    projectId = "project1",
-                    amount = 5000.0
-                ),
-                NotificationData(
-                    title = "Expense Approved",
-                    message = "Your ₹3,400 expense for Set Design has been approved by Lead Approver",
-                    type = NotificationType.EXPENSE_APPROVED,
-                    recipientId = "+919876543210",
-                    senderId = "approver4",
-                    expenseId = "exp5",
-                    projectId = "project1",
-                    amount = 3400.0
-                ),
-                NotificationData(
-                    title = "Expense Rejected",
-                    message = "Your ₹7,900 expense for Movie Production A has been rejected by Current Approver",
-                    type = NotificationType.EXPENSE_REJECTED,
-                    recipientId = "+919876543210",
-                    senderId = "approver1",
-                    expenseId = "exp4",
-                    projectId = "project1",
-                    amount = 7900.0
-                ),
-                
-                // Budget change notifications
-                NotificationData(
-                    title = "Budget Added",
-                    message = "₹25,000 has been added to Costumes budget for Movie Production A",
-                    type = NotificationType.BUDGET_ADDED,
-                    recipientId = "+919876543210",
-                    senderId = "admin",
-                    projectId = "project1",
-                    departmentId = "Costumes",
-                    amount = 25000.0
-                ),
-                NotificationData(
-                    title = "Budget Deducted",
-                    message = "₹10,000 has been deducted from Equipment budget for Movie Production A",
-                    type = NotificationType.BUDGET_DEDUCTED,
-                    recipientId = "+919876543210",
-                    senderId = "admin",
-                    projectId = "project1",
-                    departmentId = "Equipment",
-                    amount = 10000.0
-                ),
-                
-                // ONLY ONE consolidated budget exceeded notification (instead of multiple duplicates)
-                NotificationData(
-                    title = "⚠️ Multiple Budget Alerts - Movie Production A",
-                    message = "Departments exceeded: Camera (+₹5,000), Lighting (+₹12,000), Sound (+₹8,000)",
-                    type = NotificationType.BUDGET_EXCEEDED_PROJECT,
-                    recipientId = "+919876543210",
-                    senderId = "system",
-                    projectId = "project1",
-                    departmentId = null, // Consolidated notification
-                    amount = 25000.0
+            // Get actual project IDs from the database
+            val projectRepository = com.deeksha.avrentertainment.repository.ProjectRepository()
+            val projectsResult = projectRepository.getAllProjects()
+            val actualProjects = projectsResult.getOrNull() ?: emptyList()
+            
+            if (actualProjects.isEmpty()) {
+                android.util.Log.d("NotificationRepository", "No projects found, skipping notification creation")
+                return@withContext Result.success(Unit)
+            }
+            
+            // Use the first few projects for sample notifications
+            val project1 = actualProjects.getOrNull(0)
+            val project2 = actualProjects.getOrNull(1)
+            val project3 = actualProjects.getOrNull(2)
+
+            // Create sample notifications for user +919876543210 (ONLY approved/rejected for USER role)
+            val sampleNotifications = mutableListOf<NotificationData>()
+            
+            // Expense status notifications for multiple projects
+            project1?.let { project ->
+                sampleNotifications.addAll(listOf(
+                    NotificationData(
+                        title = "Expense Approved",
+                        message = "Your ₹5,000 expense for ${project.name} has been approved by John Doe",
+                        type = NotificationType.EXPENSE_APPROVED,
+                        recipientId = "+919876543210",
+                        senderId = "approver1",
+                        expenseId = "exp1",
+                        projectId = project.id,
+                        amount = 5000.0
+                    ),
+                    NotificationData(
+                        title = "Expense Approved",
+                        message = "Your ₹3,400 expense for ${project.name} has been approved by Lead Approver",
+                        type = NotificationType.EXPENSE_APPROVED,
+                        recipientId = "+919876543210",
+                        senderId = "approver4",
+                        expenseId = "exp5",
+                        projectId = project.id,
+                        amount = 3400.0
+                    )
+                ))
+            }
+            
+            project2?.let { project ->
+                sampleNotifications.add(
+                    NotificationData(
+                        title = "Expense Rejected",
+                        message = "Your ₹7,900 expense for ${project.name} has been rejected by Current Approver",
+                        type = NotificationType.EXPENSE_REJECTED,
+                        recipientId = "+919876543210",
+                        senderId = "approver1",
+                        expenseId = "exp4",
+                        projectId = project.id,
+                        amount = 7900.0
+                    )
                 )
-            )
+            }
+            
+            project3?.let { project ->
+                sampleNotifications.addAll(listOf(
+                    NotificationData(
+                        title = "Expense Approved",
+                        message = "Your ₹2,500 expense for ${project.name} has been approved by Manager",
+                        type = NotificationType.EXPENSE_APPROVED,
+                        recipientId = "+919876543210",
+                        senderId = "approver2",
+                        expenseId = "exp6",
+                        projectId = project.id,
+                        amount = 2500.0
+                    ),
+                    NotificationData(
+                        title = "Expense Rejected",
+                        message = "Your ₹1,200 expense for ${project.name} has been rejected by Supervisor",
+                        type = NotificationType.EXPENSE_REJECTED,
+                        recipientId = "+919876543210",
+                        senderId = "approver3",
+                        expenseId = "exp7",
+                        projectId = project.id,
+                        amount = 1200.0
+                    )
+                ))
+            }
 
             sampleNotifications.forEach { notification ->
                 createNotification(notification).fold(
                     onSuccess = { notificationId ->
-                        android.util.Log.d("NotificationRepository", "✅ Created sample notification: ${notification.title}")
+                        android.util.Log.d("NotificationRepository", "✅ Created sample notification: ${notification.title} for project ${notification.projectId}")
                     },
                     onFailure = { error ->
                         android.util.Log.e("NotificationRepository", "❌ Failed to create sample notification: ${error.message}")
@@ -1461,10 +1502,253 @@ class NotificationRepository(private val context: Context? = null) {
                 )
             }
 
-            android.util.Log.d("NotificationRepository", "Created ${sampleNotifications.size} balanced sample notifications")
+            android.util.Log.d("NotificationRepository", "Created ${sampleNotifications.size} sample notifications for USER across ${actualProjects.size} projects")
             Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e("NotificationRepository", "Failed to create sample notifications: ${e.message}")
+            Result.failure(e)
+        }
+    }
+    
+    // Enhanced method to create sample notifications with real project mapping
+    suspend fun createSampleNotificationsForUser(userId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            android.util.Log.d("NotificationRepository", "🔔 Creating sample notifications for user: $userId")
+            
+            // Check if this user already has notifications
+            val existingNotifications = getNotificationsForUser(userId).getOrNull()
+            if (existingNotifications?.isNotEmpty() == true) {
+                android.util.Log.d("NotificationRepository", "User $userId already has ${existingNotifications.size} notifications, skipping creation")
+                return@withContext Result.success(Unit)
+            }
+            
+            // Get actual projects
+            val projectRepository = com.deeksha.avrentertainment.repository.ProjectRepository()
+            val projectsResult = projectRepository.getAllProjects()
+            val actualProjects = projectsResult.getOrNull() ?: emptyList()
+            
+            if (actualProjects.isEmpty()) {
+                android.util.Log.d("NotificationRepository", "No projects found for sample notifications")
+                return@withContext Result.success(Unit)
+            }
+            
+            // Get user role to determine what notifications to create
+            val authRepository = AuthRepository()
+            val userRole = authRepository.getUserRole(userId).getOrNull() ?: UserRole.USER
+            
+            android.util.Log.d("NotificationRepository", "📋 Creating notifications for $userRole: $userId")
+            
+            // Create notifications for the first 3 projects (or fewer if not available)
+            val projectsToUse = actualProjects.take(3)
+            val sampleNotifications = mutableListOf<NotificationData>()
+            
+            when (userRole) {
+                UserRole.USER -> {
+                    // Create approved and rejected expense notifications for users
+                    projectsToUse.forEachIndexed { index, project ->
+                        when (index % 3) {
+                            0 -> {
+                                // Approved expenses for first project
+                                sampleNotifications.addAll(listOf(
+                                    NotificationData(
+                                        title = "Expense Approved",
+                                        message = "Your ₹${5000 + index * 1000} expense for ${project.name} has been approved",
+                                        type = NotificationType.EXPENSE_APPROVED,
+                                        recipientId = userId,
+                                        senderId = "approver${index + 1}",
+                                        projectId = project.id,
+                                        amount = (5000 + index * 1000).toDouble()
+                                    ),
+                                    NotificationData(
+                                        title = "Expense Approved", 
+                                        message = "Your ₹${3000 + index * 500} expense for ${project.name} has been approved",
+                                        type = NotificationType.EXPENSE_APPROVED,
+                                        recipientId = userId,
+                                        senderId = "approver${index + 1}",
+                                        projectId = project.id,
+                                        amount = (3000 + index * 500).toDouble()
+                                    )
+                                ))
+                            }
+                            1 -> {
+                                // Rejected expense for second project
+                                sampleNotifications.add(
+                                    NotificationData(
+                                        title = "Expense Rejected",
+                                        message = "Your ₹${4000 + index * 800} expense for ${project.name} has been rejected",
+                                        type = NotificationType.EXPENSE_REJECTED,
+                                        recipientId = userId,
+                                        senderId = "approver${index + 1}",
+                                        projectId = project.id,
+                                        amount = (4000 + index * 800).toDouble()
+                                    )
+                                )
+                            }
+                            2 -> {
+                                // Mixed approved and rejected for third project
+                                sampleNotifications.addAll(listOf(
+                                    NotificationData(
+                                        title = "Expense Approved",
+                                        message = "Your ₹${2500 + index * 300} expense for ${project.name} has been approved",
+                                        type = NotificationType.EXPENSE_APPROVED,
+                                        recipientId = userId,
+                                        senderId = "approver${index + 1}",
+                                        projectId = project.id,
+                                        amount = (2500 + index * 300).toDouble()
+                                    ),
+                                    NotificationData(
+                                        title = "Expense Rejected",
+                                        message = "Your ₹${1500 + index * 200} expense for ${project.name} has been rejected",
+                                        type = NotificationType.EXPENSE_REJECTED,
+                                        recipientId = userId,
+                                        senderId = "approver${index + 1}",
+                                        projectId = project.id,
+                                        amount = (1500 + index * 200).toDouble()
+                                    )
+                                ))
+                            }
+                        }
+                    }
+                }
+                
+                UserRole.APPROVER -> {
+                    // Create expense submission notifications for approvers
+                    projectsToUse.forEachIndexed { index, project ->
+                        sampleNotifications.addAll(listOf(
+                            NotificationData(
+                                title = "New Expense Submitted",
+                                message = "₹${3000 + index * 500} expense for ${project.name} needs approval",
+                                type = NotificationType.EXPENSE_SUBMITTED,
+                                recipientId = userId,
+                                senderId = "user${index + 1}",
+                                projectId = project.id,
+                                amount = (3000 + index * 500).toDouble()
+                            ),
+                            NotificationData(
+                                title = "Pending Approval Reminder",
+                                message = "${index + 2} expenses awaiting approval in ${project.name}",
+                                type = NotificationType.PENDING_APPROVAL_REMINDER,
+                                recipientId = userId,
+                                senderId = "system",
+                                projectId = project.id,
+                                amount = (5000 + index * 1000).toDouble()
+                            )
+                        ))
+                    }
+                }
+                
+                UserRole.PRODUCTION_HEAD -> {
+                    // Production heads get no notifications as per requirement
+                    android.util.Log.d("NotificationRepository", "🚫 No notifications created for Production Head as per business requirement")
+                    return@withContext Result.success(Unit)
+                }
+            }
+            
+            // Create the notifications
+            var successCount = 0
+            sampleNotifications.forEach { notification ->
+                createNotification(notification).fold(
+                    onSuccess = { notificationId ->
+                        android.util.Log.d("NotificationRepository", "✅ Created notification: ${notification.title} for ${notification.projectId}")
+                        successCount++
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("NotificationRepository", "❌ Failed to create notification: ${error.message}")
+                    }
+                )
+            }
+            
+            android.util.Log.d("NotificationRepository", "✅ Created $successCount sample notifications for $userRole $userId across ${projectsToUse.size} projects")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e("NotificationRepository", "❌ Error creating sample notifications: ${e.message}")
+            Result.failure(e)
+        }
+    }
+    
+    // Comprehensive method to ensure all sample users have notifications
+    suspend fun ensureAllUsersHaveNotifications(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            android.util.Log.d("NotificationRepository", "🔄 Ensuring all sample users have notifications...")
+            
+            // Sample users from AuthRepository
+            val sampleUsers = listOf(
+                "+919876543210" to UserRole.USER,
+                "+918765432109" to UserRole.APPROVER,
+                "+917654321098" to UserRole.USER,
+                "+919999999999" to UserRole.PRODUCTION_HEAD
+            )
+            
+            var totalCreated = 0
+            
+            sampleUsers.forEach { (userId, expectedRole) ->
+                try {
+                    // Verify user role in database
+                    val authRepository = AuthRepository()
+                    val actualRole = authRepository.getUserRole(userId).getOrNull()
+                    
+                    if (actualRole != null) {
+                        android.util.Log.d("NotificationRepository", "👤 Processing user $userId with role $actualRole")
+                        
+                        // Create notifications for this user
+                        createSampleNotificationsForUser(userId).fold(
+                            onSuccess = {
+                                android.util.Log.d("NotificationRepository", "✅ Notifications ensured for $userId")
+                                totalCreated++
+                            },
+                            onFailure = { error ->
+                                android.util.Log.e("NotificationRepository", "❌ Failed to create notifications for $userId: ${error.message}")
+                            }
+                        )
+                    } else {
+                        android.util.Log.w("NotificationRepository", "⚠️ User $userId not found in database")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("NotificationRepository", "❌ Error processing user $userId: ${e.message}")
+                }
+            }
+            
+            android.util.Log.d("NotificationRepository", "✅ Processed notifications for $totalCreated users")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e("NotificationRepository", "❌ Error ensuring user notifications: ${e.message}")
+            Result.failure(e)
+        }
+    }
+    
+    // Dynamic method to create notifications for any current user
+    suspend fun createNotificationsForCurrentUser(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val authRepository = AuthRepository()
+            val currentUserId = authRepository.getCurrentUserPhoneNumber()
+            
+            if (currentUserId != null) {
+                android.util.Log.d("NotificationRepository", "🔔 Creating notifications for current user: $currentUserId")
+                
+                // Get user role
+                val userRole = authRepository.getUserRole(currentUserId).getOrNull()
+                if (userRole != null) {
+                    createSampleNotificationsForUser(currentUserId).fold(
+                        onSuccess = {
+                            android.util.Log.d("NotificationRepository", "✅ Successfully created notifications for current user")
+                        },
+                        onFailure = { error ->
+                            android.util.Log.e("NotificationRepository", "❌ Failed to create notifications for current user: ${error.message}")
+                        }
+                    )
+                } else {
+                    android.util.Log.w("NotificationRepository", "⚠️ Current user has no role assigned")
+                }
+            } else {
+                android.util.Log.w("NotificationRepository", "⚠️ No current user found")
+                
+                // Fallback: Ensure all sample users have notifications
+                return@withContext ensureAllUsersHaveNotifications()
+            }
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e("NotificationRepository", "❌ Error creating notifications for current user: ${e.message}")
             Result.failure(e)
         }
     }
@@ -1602,6 +1886,13 @@ class NotificationRepository(private val context: Context? = null) {
                                 projectName = data["projectName"] ?: "Unknown Project"
                             )
                         }
+                        "PROJECT_ASSIGNMENT" -> {
+                            android.util.Log.d("PushNotification", "🎯 Showing project assignment notification!")
+                            notificationService.sendProjectAssignmentNotification(
+                                projectName = data["projectName"] ?: "Unknown Project",
+                                role = data["role"] ?: "Unknown Role"
+                            )
+                        }
                         else -> {
                             // Generic notification for any other type
                             notificationService.sendCustomNotification(title, body)
@@ -1630,35 +1921,72 @@ class NotificationRepository(private val context: Context? = null) {
         }
     }
     
-    // Role-specific push notification filtering
+    // Enhanced role-specific push notification filtering with dynamic targeting
     private fun shouldSendPushNotification(recipientId: String, notificationType: String, userRole: UserRole): Boolean {
-        return when (userRole) {
+        android.util.Log.d("PushNotificationFilter", "🔍 Checking if $recipientId ($userRole) should receive $notificationType")
+        
+        val shouldSend = when (userRole) {
             UserRole.USER -> {
-                // Users only get push notifications for their OWN submitted expenses (approved/rejected)
+                // Users only get push notifications for their OWN submitted expenses (approved/rejected) and project assignments
                 when (notificationType) {
                     "EXPENSE_APPROVED", "EXPENSE_REJECTED" -> true // Only for their own expenses
                     "EXPENSE_SUBMITTED" -> false // Users don't get notifications for submitting
                     "PENDING_APPROVAL_REMINDER" -> false // Users don't get pending approval reminders
                     "BUDGET_ADDED", "BUDGET_DEDUCTED" -> false // No budget notifications for users
                     "BUDGET_EXCEEDED_PROJECT", "BUDGET_EXCEEDED_DEPARTMENT" -> false // No budget exceeded for users
+                    "PROJECT_ASSIGNMENT" -> {
+                        android.util.Log.d("PushNotificationFilter", "🎯 USER $recipientId: PROJECT_ASSIGNMENT notification APPROVED")
+                        true // Users get notifications when assigned to projects
+                    }
                     else -> false
                 }
             }
             UserRole.APPROVER -> {
-                // Approvers only get push notifications for expenses they need to approve in their projects
+                // Approvers get push notifications for expenses they need to approve and project assignments
                 when (notificationType) {
                     "EXPENSE_SUBMITTED" -> true // New expense submissions that need their approval
                     "PENDING_APPROVAL_REMINDER" -> true // Pending approval reminders for their projects
                     "EXPENSE_APPROVED", "EXPENSE_REJECTED" -> false // No notifications for their own approvals
                     "BUDGET_ADDED", "BUDGET_DEDUCTED" -> false // No budget change notifications for approvers
                     "BUDGET_EXCEEDED_PROJECT", "BUDGET_EXCEEDED_DEPARTMENT" -> false // No budget exceeded for approvers
+                    "PROJECT_ASSIGNMENT" -> {
+                        android.util.Log.d("PushNotificationFilter", "🎯 APPROVER $recipientId: PROJECT_ASSIGNMENT notification APPROVED")
+                        true // Approvers get notifications when assigned to projects
+                    }
                     else -> false
                 }
             }
             UserRole.PRODUCTION_HEAD -> {
-                // Production Head gets NO push notifications as per business requirement
-                false
+                // Production Head gets NO push notifications as per business requirement, except project assignments they create/manage
+                when (notificationType) {
+                    "PROJECT_ASSIGNMENT" -> {
+                        android.util.Log.d("PushNotificationFilter", "🎯 PRODUCTION_HEAD $recipientId: PROJECT_ASSIGNMENT notification APPROVED (special case)")
+                        true // Production heads can receive project assignment notifications if they're assigned to projects
+                    }
+                    else -> false
+                }
             }
+        }
+        
+        android.util.Log.d("PushNotificationFilter", "📋 Result: $recipientId ($userRole) -> $notificationType = $shouldSend")
+        return shouldSend
+    }
+
+    // Validate if a user should receive a project assignment notification
+    private suspend fun validateProjectAssignmentTarget(
+        userId: String, 
+        projectId: String, 
+        assignedApprover: String, 
+        assignedTeamMembers: List<String>
+    ): Boolean {
+        return try {
+            // Check if user is in the assigned list
+            val isTargeted = userId == assignedApprover || userId in assignedTeamMembers
+            android.util.Log.d("ProjectAssignmentValidation", "🎯 User $userId targeted for project $projectId: $isTargeted")
+            isTargeted
+        } catch (e: Exception) {
+            android.util.Log.e("ProjectAssignmentValidation", "❌ Error validating assignment target: ${e.message}")
+            false
         }
     }
     
@@ -1817,17 +2145,20 @@ class NotificationRepository(private val context: Context? = null) {
             
             val relevantTypes = when (userRole) {
                 UserRole.USER -> listOf(
-                    // Users only see approval/rejection for their own expenses in this project
+                    // Users only see approval/rejection for their own expenses in this project + project assignments
                     NotificationType.EXPENSE_APPROVED,
-                    NotificationType.EXPENSE_REJECTED
+                    NotificationType.EXPENSE_REJECTED,
+                    NotificationType.PROJECT_ASSIGNMENT // Users see project assignment notifications
                 )
                 UserRole.APPROVER -> listOf(
-                    // Approvers only see new submissions they need to approve in this project
+                    // Approvers only see new submissions they need to approve in this project + project assignments
                     NotificationType.EXPENSE_SUBMITTED,
-                    NotificationType.PENDING_APPROVAL_REMINDER
+                    NotificationType.PENDING_APPROVAL_REMINDER,
+                    NotificationType.PROJECT_ASSIGNMENT // Approvers see project assignment notifications
                 )
                 UserRole.PRODUCTION_HEAD -> listOf(
-                    // Production Head gets no notifications
+                    // Production Head gets no notifications except project assignments
+                    NotificationType.PROJECT_ASSIGNMENT // Production heads can see project assignment notifications
                 )
             }
             
@@ -1860,9 +2191,10 @@ class NotificationRepository(private val context: Context? = null) {
             android.util.Log.d("ApproverNotifications", "🔍 Loading pre-login notifications for approver: $approverId")
             
             val approverTypes = listOf(
-                // Approvers only see expense submissions they need to approve
+                // Approvers only see expense submissions they need to approve + project assignments
                 NotificationType.EXPENSE_SUBMITTED,
-                NotificationType.PENDING_APPROVAL_REMINDER
+                NotificationType.PENDING_APPROVAL_REMINDER,
+                NotificationType.PROJECT_ASSIGNMENT // Approvers see project assignment notifications
             )
             
             val snapshot = notificationsCollection
@@ -1915,6 +2247,208 @@ class NotificationRepository(private val context: Context? = null) {
             Result.success(Unit)
         } catch (e: Exception) {
             android.util.Log.e("ProjectNotifications", "❌ Error in project selection notification: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    // Send project assignment notifications to approver and team members (Simplified)
+    suspend fun sendProjectAssignmentNotifications(
+        projectId: String,
+        projectName: String,
+        approverId: String,
+        teamMemberIds: List<String>,
+        assignedBy: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            android.util.Log.d("ProjectAssignment", "📱 Starting project assignment notifications for: $projectName")
+            android.util.Log.d("ProjectAssignment", "👤 Approver: $approverId")
+            android.util.Log.d("ProjectAssignment", "👥 Team members: ${teamMemberIds.joinToString()}")
+            
+            val authRepository = AuthRepository()
+            var successCount = 0
+            var errorCount = 0
+            
+            // STEP 1: Send notification to approver (but NOT if they are Production Head)
+            try {
+                android.util.Log.d("ProjectAssignment", "🔍 Validating approver: $approverId")
+                
+                // Validate approver exists and get their actual role
+                val approverRole = authRepository.getUserRole(approverId).getOrNull()
+                if (approverRole == null) {
+                    android.util.Log.w("ProjectAssignment", "⚠️ Approver $approverId not found in system, skipping notification")
+                } else if (approverRole == UserRole.PRODUCTION_HEAD) {
+                    android.util.Log.d("ProjectAssignment", "🚫 Skipping notification for Production Head: $approverId")
+                } else {
+                    android.util.Log.d("ProjectAssignment", "✅ Approver validated: $approverId has role $approverRole")
+                    
+                    val approverNotification = NotificationData(
+                        title = "🎯 New Project Assignment",
+                        message = "You've been assigned as Approver for '$projectName'. You can now approve expenses and manage the project budget.",
+                        type = NotificationType.PROJECT_ASSIGNMENT,
+                        recipientId = approverId,
+                        senderId = assignedBy,
+                        projectId = projectId
+                    )
+                    
+                    createNotification(approverNotification).fold(
+                        onSuccess = { notificationId ->
+                            android.util.Log.d("ProjectAssignment", "✅ Created approver notification: $notificationId for $approverId")
+                            
+                            // Send push notification to approver ONLY
+                            sendPushNotification(
+                                recipientId = approverId,
+                                title = "🎯 New Project Assignment",
+                                body = "You've been assigned as Approver for '$projectName'",
+                                data = mapOf(
+                                    "type" to "PROJECT_ASSIGNMENT",
+                                    "projectId" to projectId,
+                                    "projectName" to projectName,
+                                    "role" to "Approver",
+                                    "userId" to approverId
+                                )
+                            )
+                            successCount++
+                        },
+                        onFailure = { error ->
+                            android.util.Log.e("ProjectAssignment", "❌ Failed to create approver notification: ${error.message}")
+                            errorCount++
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ProjectAssignment", "❌ Error validating approver $approverId: ${e.message}")
+                errorCount++
+            }
+            
+            // STEP 2: Send notifications to team members (but NOT if they are Production Head)
+            teamMemberIds.forEach { memberId ->
+                try {
+                    android.util.Log.d("ProjectAssignment", "🔍 Validating team member: $memberId")
+                    
+                    // Validate team member exists and get their actual role
+                    val memberRole = authRepository.getUserRole(memberId).getOrNull()
+                    if (memberRole == null) {
+                        android.util.Log.w("ProjectAssignment", "⚠️ Team member $memberId not found in system, skipping notification")
+                    } else if (memberRole == UserRole.PRODUCTION_HEAD) {
+                        android.util.Log.d("ProjectAssignment", "🚫 Skipping notification for Production Head: $memberId")
+                    } else {
+                        android.util.Log.d("ProjectAssignment", "✅ Team member validated: $memberId has role $memberRole")
+                        
+                        val memberNotification = NotificationData(
+                            title = "🎯 New Project Assignment",
+                            message = "You've been assigned as Team Member/User for '$projectName'. You can now submit expenses and track project activities.",
+                            type = NotificationType.PROJECT_ASSIGNMENT,
+                            recipientId = memberId,
+                            senderId = assignedBy,
+                            projectId = projectId
+                        )
+                        
+                        createNotification(memberNotification).fold(
+                            onSuccess = { notificationId ->
+                                android.util.Log.d("ProjectAssignment", "✅ Created team member notification: $notificationId for $memberId")
+                                
+                                // Send push notification to team member ONLY
+                                sendPushNotification(
+                                    recipientId = memberId,
+                                    title = "🎯 New Project Assignment",
+                                    body = "You've been assigned as Team Member/User for '$projectName'",
+                                    data = mapOf(
+                                        "type" to "PROJECT_ASSIGNMENT",
+                                        "projectId" to projectId,
+                                        "projectName" to projectName,
+                                        "role" to "Team Member/User",
+                                        "userId" to memberId
+                                    )
+                                )
+                                successCount++
+                            },
+                            onFailure = { error ->
+                                android.util.Log.e("ProjectAssignment", "❌ Failed to create team member notification for $memberId: ${error.message}")
+                                errorCount++
+                            }
+                        )
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ProjectAssignment", "❌ Error validating team member $memberId: ${e.message}")
+                    errorCount++
+                }
+                
+                // Small delay between notifications to avoid rate limiting
+                kotlinx.coroutines.delay(500)
+            }
+            
+            // STEP 3: Summary logging
+            val totalTargeted = 1 + teamMemberIds.size // 1 approver + team members
+            android.util.Log.d("ProjectAssignment", "📊 PROJECT ASSIGNMENT NOTIFICATION SUMMARY:")
+            android.util.Log.d("ProjectAssignment", "   • Project: $projectName")
+            android.util.Log.d("ProjectAssignment", "   • Targeted Users: $totalTargeted")
+            android.util.Log.d("ProjectAssignment", "   • Successful Notifications: $successCount")
+            android.util.Log.d("ProjectAssignment", "   • Failed Notifications: $errorCount")
+            android.util.Log.d("ProjectAssignment", "   • 🚫 Production Heads: No notifications sent as per requirement")
+            android.util.Log.d("ProjectAssignment", "   • 📱 Only 2 message types: Approver & Team Member/User")
+            
+            if (successCount > 0) {
+                android.util.Log.d("ProjectAssignment", "✅ Project assignment notifications completed successfully")
+                Result.success(Unit)
+            } else {
+                android.util.Log.w("ProjectAssignment", "⚠️ No notifications sent - all users failed validation or were Production Heads")
+                Result.failure(Exception("No valid users found to notify"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ProjectAssignment", "❌ Error in project assignment notifications: ${e.message}")
+            Result.failure(e)
+        }
+    }
+
+    // Debug method to check what notifications exist for a user
+    suspend fun debugUserNotifications(userId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            android.util.Log.d("NotificationDebug", "🔍 DEBUG: Checking notifications for user: $userId")
+            
+            // Get all notifications for this user
+            val allNotifications = getNotificationsForUser(userId).getOrNull() ?: emptyList()
+            android.util.Log.d("NotificationDebug", "📊 Total notifications found: ${allNotifications.size}")
+            
+            if (allNotifications.isEmpty()) {
+                android.util.Log.d("NotificationDebug", "❌ NO NOTIFICATIONS FOUND for user $userId")
+                
+                // Check if user exists in database
+                val authRepository = AuthRepository()
+                val userRole = authRepository.getUserRole(userId).getOrNull()
+                android.util.Log.d("NotificationDebug", "👤 User role in database: $userRole")
+                
+                // Try to create notifications
+                android.util.Log.d("NotificationDebug", "🔄 Attempting to create notifications...")
+                createSampleNotificationsForUser(userId).fold(
+                    onSuccess = {
+                        android.util.Log.d("NotificationDebug", "✅ Notifications created successfully")
+                        
+                        // Check again
+                        val newNotifications = getNotificationsForUser(userId).getOrNull() ?: emptyList()
+                        android.util.Log.d("NotificationDebug", "📊 Notifications after creation: ${newNotifications.size}")
+                    },
+                    onFailure = { error ->
+                        android.util.Log.e("NotificationDebug", "❌ Failed to create notifications: ${error.message}")
+                    }
+                )
+            } else {
+                android.util.Log.d("NotificationDebug", "✅ Found ${allNotifications.size} notifications:")
+                allNotifications.forEachIndexed { index, notification ->
+                    android.util.Log.d("NotificationDebug", "   ${index + 1}. ${notification.type}: ${notification.title}")
+                    android.util.Log.d("NotificationDebug", "      Project: ${notification.projectId}, Amount: ₹${notification.amount}")
+                }
+                
+                // Group by project for summary
+                val groupedByProject = allNotifications.groupBy { it.projectId }
+                android.util.Log.d("NotificationDebug", "📁 Grouped by project:")
+                groupedByProject.forEach { (projectId, notifications) ->
+                    android.util.Log.d("NotificationDebug", "   Project $projectId: ${notifications.size} notifications")
+                }
+            }
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e("NotificationDebug", "❌ Error in debug: ${e.message}")
             Result.failure(e)
         }
     }

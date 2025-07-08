@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.Divider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -897,20 +898,150 @@ fun CreateProjectScreen(
                     }
                 }
                 
-                // Allocated/Total calculation including dynamic boxes
+                // REAL-TIME Allocated/Total calculation including dynamic boxes
                 val predefinedAllocated = departmentBudgets.values.sumOf { it.toDoubleOrNull() ?: 0.0 }
                 val dynamicAllocated = departmentInputBoxes.filter { 
                     it.departmentName.isNotBlank() && it.budget.isNotBlank() 
                 }.sumOf { it.budget.toDoubleOrNull() ?: 0.0 }
                 val totalAllocated = predefinedAllocated + dynamicAllocated
+                val totalProjectBudget = totalBudget.toDoubleOrNull() ?: 0.0
+                val isBudgetExceeded = totalProjectBudget > 0 && totalAllocated > totalProjectBudget
+                val exceededAmount = if (isBudgetExceeded) totalAllocated - totalProjectBudget else 0.0
                 
+                Spacer(Modifier.height(12.dp))
+                
+                // Budget Summary (always visible)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isBudgetExceeded) Color(0xFFFFEBEE) else Color(0xFFF5F5F5)
+                    ),
+                    border = if (isBudgetExceeded) {
+                        androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFD32F2F))
+                    } else {
+                        androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE0E0E0))
+                    }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    ) {
                 Text(
-                    "Allocated: ₹${String.format("%,.0f", totalAllocated)} / ₹${totalBudget.ifBlank { "0" }}", 
-                    color = if ((totalBudget.toDoubleOrNull() ?: 0.0) < totalAllocated) Color.Red else Color(0xFF2E5CFF), 
+                            "Budget Summary",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = if (isBudgetExceeded) Color(0xFFD32F2F) else Color(0xFF2E5CFF)
+                        )
+                        
+                        Spacer(Modifier.height(8.dp))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "Total Allocated:",
+                                fontSize = 14.sp,
+                                color = if (isBudgetExceeded) Color(0xFFD32F2F) else Color.Black
+                            )
+                            Text(
+                                "₹${String.format("%,.0f", totalAllocated)}",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isBudgetExceeded) Color(0xFFD32F2F) else Color.Black
+                            )
+                        }
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                "Total Budget:",
+                                fontSize = 14.sp,
+                                color = if (isBudgetExceeded) Color(0xFFD32F2F) else Color.Black
+                            )
+                            Text(
+                                "₹${totalBudget.ifBlank { "0" }}",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isBudgetExceeded) Color(0xFFD32F2F) else Color.Black
+                            )
+                        }
+                        
+                        if (isBudgetExceeded) {
+                            Spacer(Modifier.height(8.dp))
+                            androidx.compose.material3.Divider(
+                                color = Color(0xFFD32F2F),
+                                thickness = 1.dp
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .background(
+                                            Color(0xFFD32F2F),
+                                            shape = androidx.compose.foundation.shape.CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "!",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
-                if ((totalBudget.toDoubleOrNull() ?: 0.0) < totalAllocated) {
-                    Text("Department budgets exceed total budget!", color = Color.Red)
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "EXCEEDS BY ₹${String.format("%,.0f", exceededAmount)}",
+                                    color = Color(0xFFD32F2F),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            
+                            Spacer(Modifier.height(4.dp))
+                            
+                            Text(
+                                "Please adjust department budgets or increase total budget",
+                                color = Color(0xFFD32F2F),
+                                fontSize = 12.sp,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            )
+                        } else if (totalProjectBudget > 0) {
+                            Spacer(Modifier.height(8.dp))
+                            androidx.compose.material3.Divider(
+                                color = Color(0xFF2E5CFF),
+                                thickness = 1.dp
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            
+                            val remainingBudget = totalProjectBudget - totalAllocated
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = "Success",
+                                    tint = Color(0xFF4CAF50),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "REMAINING: ₹${String.format("%,.0f", remainingBudget)}",
+                                    color = Color(0xFF4CAF50),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
                 }
             }
             
@@ -918,14 +1049,25 @@ fun CreateProjectScreen(
             item {
                 Spacer(Modifier.height(16.dp))
                 
+                // Calculate budget validation for form validation
+                val predefinedAllocated = departmentBudgets.values.sumOf { it.toDoubleOrNull() ?: 0.0 }
+                val dynamicAllocated = departmentInputBoxes.filter { 
+                    it.departmentName.isNotBlank() && it.budget.isNotBlank() 
+                }.sumOf { it.budget.toDoubleOrNull() ?: 0.0 }
+                val totalAllocated = predefinedAllocated + dynamicAllocated
+                val totalProjectBudget = totalBudget.toDoubleOrNull() ?: 0.0
+                val isBudgetExceeded = totalProjectBudget > 0 && totalAllocated > totalProjectBudget
+                val exceededAmount = if (isBudgetExceeded) totalAllocated - totalProjectBudget else 0.0
+                
                 val isFormValid = projectName.isNotBlank() && 
                                 startDate != null && 
                                 selectedApprover != null && 
-                                selectedTeamMembers.isNotEmpty()
+                                selectedTeamMembers.isNotEmpty() &&
+                                !isBudgetExceeded // Prevent submission if budget is exceeded
                 
                 Button(
                     onClick = {
-                        if (isFormValid) {
+                        if (isFormValid && !isBudgetExceeded) {
                             isSubmitting = true
                             scope.launch {
                                 try {
@@ -953,7 +1095,28 @@ fun CreateProjectScreen(
                                     )
                                     val result = projectRepo.createProject(project)
                                     result.fold(
-                                        onSuccess = {
+                                        onSuccess = { createdProject ->
+                                            // Send project assignment notifications
+                                            try {
+                                                val notificationRepository = com.deeksha.avrentertainment.repository.NotificationRepository(context)
+                                                val authRepository = com.deeksha.avrentertainment.repository.AuthRepository()
+                                                val currentUserId = authRepository.getCurrentUserPhoneNumber() ?: "system"
+                                                
+                                                // Send notifications to approver and team members
+                                                notificationRepository.sendProjectAssignmentNotifications(
+                                                    projectId = createdProject.id,
+                                                    projectName = createdProject.name,
+                                                    approverId = selectedApprover!!.phone,
+                                                    teamMemberIds = selectedTeamMembers.map { it.phone },
+                                                    assignedBy = currentUserId
+                                                )
+                                                
+                                                android.util.Log.d("ProjectCreation", "✅ Project created and notifications sent successfully")
+                                            } catch (e: Exception) {
+                                                android.util.Log.e("ProjectCreation", "⚠️ Project created but notification failed: ${e.message}")
+                                                // Don't fail the whole operation if notification fails
+                                            }
+                                            
                                             onProjectCreated()
                                         },
                                         onFailure = { e ->
@@ -968,9 +1131,12 @@ fun CreateProjectScreen(
                             }
                         }
                     },
-                    enabled = !isSubmitting && isFormValid,
+                    enabled = !isSubmitting && isFormValid && !isBudgetExceeded,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E5CFF))
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isBudgetExceeded) Color(0xFFD32F2F) else Color(0xFF2E5CFF),
+                        disabledContainerColor = if (isBudgetExceeded) Color(0xFFFFCDD2) else Color(0xFFE3F2FD)
+                    )
                 ) {
                     if (isSubmitting) {
                         CircularProgressIndicator(
@@ -981,7 +1147,11 @@ fun CreateProjectScreen(
                         Spacer(Modifier.width(8.dp))
                     }
                     Text(
-                        if (isSubmitting) "Creating Project..." else "Create Project",
+                        when {
+                            isSubmitting -> "Creating Project..."
+                            isBudgetExceeded -> "Fix Budget to Create"
+                            else -> "Create Project"
+                        },
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium
@@ -996,6 +1166,84 @@ fun CreateProjectScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.fillMaxWidth()
                     )
+                }
+                
+                // PROMINENT BUDGET EXCEEDED ALERT
+                if (isBudgetExceeded) {
+                    Spacer(Modifier.height(16.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFFFEBEE) // Light red background
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = 2.dp, 
+                            color = Color(0xFFD32F2F) // Dark red border
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                // Warning emoji with background circle
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(
+                                            Color(0xFFD32F2F),
+                                            shape = androidx.compose.foundation.shape.CircleShape
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "!",
+                                        color = Color.White,
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    "BUDGET EXCEEDED",
+                                    color = Color(0xFFD32F2F),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp
+                                )
+                            }
+                            
+                            Spacer(Modifier.height(8.dp))
+                            
+                            Text(
+                                "Department budgets exceed the total project budget by ₹${String.format("%,.0f", exceededAmount)}",
+                                color = Color(0xFFD32F2F),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            
+                            Spacer(Modifier.height(4.dp))
+                            
+                            Text(
+                                "• Total Allocated: ₹${String.format("%,.0f", totalAllocated)}\n• Project Budget: ₹${String.format("%,.0f", totalProjectBudget)}\n• Excess Amount: ₹${String.format("%,.0f", exceededAmount)}",
+                                color = Color(0xFFD32F2F),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                            
+                            Spacer(Modifier.height(8.dp))
+                            
+                            Text(
+                                "Please adjust the department budgets or increase the total project budget before creating the project.",
+                                color = Color(0xFFD32F2F),
+                                fontSize = 12.sp,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -34,6 +34,7 @@ enum class NotificationType {
     // Project related
     PROJECT_CREATED,
     PROJECT_UPDATED,
+    PROJECT_ASSIGNMENT,
     
     // Approval related
     PENDING_APPROVAL_REMINDER

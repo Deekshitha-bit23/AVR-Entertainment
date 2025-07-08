@@ -88,9 +88,10 @@ fun NewReportsScreen(
     
     // Filter states
     var selectedDateRange by remember { mutableStateOf("This Year") }
-    var selectedDepartment by remember { mutableStateOf("All Departments") }
+    var selectedDepartment by remember { mutableStateOf("All Projects") }
     var dateRangeExpanded by remember { mutableStateOf(false) }
     var departmentExpanded by remember { mutableStateOf(false) }
+    var selectedProjectId by remember { mutableStateOf("") }
     
     // Available filter options
     var availableDepartments by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -195,23 +196,26 @@ fun NewReportsScreen(
                 else -> true
             }
             
+            // Project filter
+            val projectMatch = selectedProjectId.isBlank() || expense.projectId == selectedProjectId
+            
             // Department filter
-            val departmentMatch = selectedDepartment == "All Departments" || expense.department == selectedDepartment
+            val departmentMatch = selectedDepartment == "All Departments" || selectedDepartment == "All Projects" || expense.department == selectedDepartment
             
-            // Project filter - if "ALL_PROJECTS", show all; otherwise filter by specific project
-            val projectMatch = projectId == "ALL_PROJECTS" || expense.projectId == projectId
-            
-            dateMatch && departmentMatch && projectMatch
+            dateMatch && projectMatch && departmentMatch
         }
         
         // Calculate department analytics (only approved expenses)
         val approvedExpenses = filteredExpenses.filter { it.status == ExpenseStatus.APPROVED }
         
         // Calculate total budget and spent for the specific project
-        val projectsToConsider = allProjects.filter { it.id == projectId }
+        val projectsToConsider = if (selectedProjectId.isBlank()) allProjects else allProjects.filter { it.id == selectedProjectId }
         
         totalBudget = projectsToConsider.sumOf { it.budget }
         totalSpent = approvedExpenses.sumOf { it.amount }
+        
+        // Collect all departments that have ever had expenses in any project
+        val globalDepartments = allExpenses.map { it.department }.distinct().sorted()
         
         // Calculate department analytics using actual project department allocations
         val departmentGroups = approvedExpenses.groupBy { it.department }
@@ -229,7 +233,6 @@ fun NewReportsScreen(
                 val totalSpent = departmentGroups.values.sumOf { expenses -> 
                     expenses.sumOf { it.amount } 
                 }
-                
                 if (totalSpent > 0) {
                     // Allocate budget proportionally to actual spending with minimum buffers
                     departmentGroups.forEach { (dept, expenses) ->
@@ -240,33 +243,29 @@ fun NewReportsScreen(
                         departmentBudgetMap[dept] = (departmentBudgetMap[dept] ?: 0.0) + allocatedBudget
                     }
                 } else {
-                    // If no expenses yet, create default allocation for common departments
-                    val commonDepartments = listOf("Art", "Camera", "Costumes", "Sound", "Other")
-                    val defaultAllocation = project.budget / commonDepartments.size
-                    commonDepartments.forEach { dept ->
+                    // If no expenses yet, create default allocation for all global departments
+                    val defaultAllocation = if (globalDepartments.isNotEmpty()) project.budget / globalDepartments.size else 0.0
+                    globalDepartments.forEach { dept ->
                         departmentBudgetMap[dept] = (departmentBudgetMap[dept] ?: 0.0) + defaultAllocation
                     }
                 }
             }
         }
         
-        // Ensure all departments with expenses or budgets are included
-        val allDepartments = (departmentGroups.keys + departmentBudgetMap.keys).distinct()
+        // Only include departments with actual expenses in the selected project and time range
+        val allDepartments = departmentGroups.keys.sorted()
         
         departmentAnalytics = allDepartments.map { dept ->
             val expenses = departmentGroups[dept] ?: emptyList()
             val spent = expenses.sumOf { it.amount }
             val budget = departmentBudgetMap[dept] ?: 0.0
-            
             // If there's spending but no budget allocation, create a reasonable budget estimate
             val effectiveBudget = if (budget == 0.0 && spent > 0) {
                 spent * 1.5 // 50% buffer for departments with spending but no allocated budget
             } else {
                 budget
             }
-            
             val utilizationPercentage = if (effectiveBudget > 0) (spent / effectiveBudget) * 100 else 0.0
-            
             DepartmentAnalytics(
                 name = dept,
                 totalSpent = spent,
@@ -275,8 +274,7 @@ fun NewReportsScreen(
                 averageExpense = if (expenses.isNotEmpty()) spent / expenses.size else 0.0,
                 utilizationPercentage = utilizationPercentage
             )
-        }.filter { it.totalSpent > 0 || it.totalBudget > 0 } // Only show departments with activity
-         .sortedByDescending { it.totalSpent }
+        }.sortedByDescending { it.totalSpent }
         
         // Create detailed expense data from filtered expenses
         detailedExpenseData = filteredExpenses.map { expense ->
@@ -308,6 +306,16 @@ fun NewReportsScreen(
         }.sortedByDescending { it.totalSum }
     }
     
+    // Filter detailedExpenseData and departmentAnalytics dynamically based on selectedDepartment
+    val filteredDetailedExpenseData = if (selectedDepartment == "All Departments" || selectedDepartment == "All Projects") {
+        detailedExpenseData
+    } else {
+        detailedExpenseData.filter { it.department == selectedDepartment }
+    }
+
+    val categoriesInDetails = filteredDetailedExpenseData.map { it.department }.distinct().sorted()
+    val analyticsForChart = departmentAnalytics.filter { it.name in categoriesInDetails }
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -317,7 +325,7 @@ fun NewReportsScreen(
         TopAppBar(
             title = {
                 Text(
-                    if (projectId == "ALL_PROJECTS") "All Projects Report" else "Reports",
+                    if (selectedDepartment == "All Projects") "All Projects Report" else "Reports",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp
@@ -440,41 +448,83 @@ fun NewReportsScreen(
                                     }
                                 }
                                 
-                                // Department Filter
-                                ExposedDropdownMenuBox(
-                                    expanded = departmentExpanded,
-                                    onExpandedChange = { departmentExpanded = !departmentExpanded },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    OutlinedTextField(
-                                        value = selectedDepartment,
-                                        onValueChange = {},
-                                        readOnly = true,
-                                        label = { Text("Department") },
-                                        trailingIcon = {
-                                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
-                                        },
-                                        modifier = Modifier
-                                            .menuAnchor()
-                                            .fillMaxWidth(),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = Color(0xFF7B68EE),
-                                            focusedLabelColor = Color(0xFF7B68EE)
-                                        )
-                                    )
-                                    
-                                    ExposedDropdownMenu(
+                                if (projectId.isBlank() || projectId == "ALL_PROJECTS") {
+                                    // Project Filter
+                                    ExposedDropdownMenuBox(
                                         expanded = departmentExpanded,
-                                        onDismissRequest = { departmentExpanded = false }
+                                        onExpandedChange = { departmentExpanded = !departmentExpanded },
+                                        modifier = Modifier.weight(1f)
                                     ) {
-                                        listOf("All Departments").plus(availableDepartments).forEach { dept ->
-                                            DropdownMenuItem(
-                                                text = { Text(dept) },
-                                                onClick = {
-                                                    selectedDepartment = dept
-                                                    departmentExpanded = false
-                                                }
+                                        OutlinedTextField(
+                                            value = selectedDepartment,
+                                            onValueChange = {},
+                                            readOnly = true,
+                                            label = { Text("Project") },
+                                            trailingIcon = {
+                                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+                                            },
+                                            modifier = Modifier
+                                                .menuAnchor()
+                                                .fillMaxWidth(),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = Color(0xFF7B68EE),
+                                                focusedLabelColor = Color(0xFF7B68EE)
                                             )
+                                        )
+                                        
+                                        ExposedDropdownMenu(
+                                            expanded = departmentExpanded,
+                                            onDismissRequest = { departmentExpanded = false }
+                                        ) {
+                                            listOf("All Projects").plus(availableProjects).forEach { projectName ->
+                                                DropdownMenuItem(
+                                                    text = { Text(projectName) },
+                                                    onClick = {
+                                                        selectedDepartment = projectName
+                                                        selectedProjectId = if (projectName == "All Projects") "" else allProjects.find { it.name == projectName }?.id ?: ""
+                                                        departmentExpanded = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Department Filter for selected project
+                                    val availableDepartmentsForProject = allExpenses.filter { it.projectId == projectId }.map { it.department }.distinct().sorted()
+                                    ExposedDropdownMenuBox(
+                                        expanded = departmentExpanded,
+                                        onExpandedChange = { departmentExpanded = !departmentExpanded },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = selectedDepartment,
+                                            onValueChange = {},
+                                            readOnly = true,
+                                            label = { Text("Department") },
+                                            trailingIcon = {
+                                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
+                                            },
+                                            modifier = Modifier
+                                                .menuAnchor()
+                                                .fillMaxWidth(),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = Color(0xFF7B68EE),
+                                                focusedLabelColor = Color(0xFF7B68EE)
+                                            )
+                                        )
+                                        ExposedDropdownMenu(
+                                            expanded = departmentExpanded,
+                                            onDismissRequest = { departmentExpanded = false }
+                                        ) {
+                                            listOf("All Departments").plus(availableDepartmentsForProject).forEach { dept ->
+                                                DropdownMenuItem(
+                                                    text = { Text(dept) },
+                                                    onClick = {
+                                                        selectedDepartment = dept
+                                                        departmentExpanded = false
+                                                    }
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -550,7 +600,7 @@ fun NewReportsScreen(
                 
 
                 
-                // Subcategory Split (Bar Chart) - Exactly like your image
+                // Category Split (Bar Chart) - Exactly like your image
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -562,7 +612,7 @@ fun NewReportsScreen(
                             modifier = Modifier.padding(16.dp)
                         ) {
                             Text(
-                                "Subcategory Split",
+                                "Category Split",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = Color(0xFF2E2E2E)
                             )
@@ -583,11 +633,11 @@ fun NewReportsScreen(
                                 }
                             } else {
                                 DynamicBarChart(
-                                    data = departmentAnalytics.associate { it.name to it.totalSpent },
+                                    data = analyticsForChart.associate { it.name to it.totalSpent },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(300.dp),
-                                    budgetData = departmentAnalytics.associate { it.name to it.totalBudget }
+                                    budgetData = analyticsForChart.associate { it.name to it.totalBudget }
                                 )
                             }
                         }
@@ -661,7 +711,7 @@ fun NewReportsScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                             
                             // Table Rows - Show all detailed expenses
-                            if (detailedExpenseData.isEmpty()) {
+                            if (filteredDetailedExpenseData.isEmpty()) {
                                 Text(
                                     "No expense data available",
                                     color = Color(0xFF666666),
@@ -671,7 +721,7 @@ fun NewReportsScreen(
                                         .padding(24.dp)
                                 )
                             } else {
-                                detailedExpenseData.take(20).forEach { expense -> // Show top 20 expenses
+                                filteredDetailedExpenseData.forEach { expense ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -732,7 +782,7 @@ fun NewReportsScreen(
                                         )
                                     }
                                     
-                                    if (expense != detailedExpenseData.take(20).last()) {
+                                    if (expense != filteredDetailedExpenseData.last()) {
                                         HorizontalDivider(
                                             color = Color(0xFFF0F0F0),
                                             modifier = Modifier.padding(vertical = 4.dp)
@@ -740,10 +790,10 @@ fun NewReportsScreen(
                                     }
                                 }
                                 
-                                if (detailedExpenseData.size > 20) {
+                                if (filteredDetailedExpenseData.size > 20) {
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        "Showing top 20 of ${detailedExpenseData.size} expenses",
+                                        "Showing top 20 of ${filteredDetailedExpenseData.size} expenses",
                                         color = Color(0xFF666666),
                                         fontSize = 12.sp,
                                         textAlign = TextAlign.Center,
@@ -787,7 +837,7 @@ fun NewReportsScreen(
                                         filters = ReportFilters(
                                             dateRange = selectedDateRange,
                                             department = selectedDepartment,
-                                            project = if (projectId == "ALL_PROJECTS") "All Projects" else (allProjects.find { it.id == projectId }?.name ?: "Unknown Project")
+                                            project = if (selectedDepartment == "All Projects") "All Projects" else (allProjects.find { it.id == selectedProjectId }?.name ?: "Unknown Project")
                                         )
                                     )
                                     
@@ -839,7 +889,7 @@ fun NewReportsScreen(
                                         filters = ReportFilters(
                                             dateRange = selectedDateRange,
                                             department = selectedDepartment,
-                                            project = if (projectId == "ALL_PROJECTS") "All Projects" else (allProjects.find { it.id == projectId }?.name ?: "Unknown Project")
+                                            project = if (selectedDepartment == "All Projects") "All Projects" else (allProjects.find { it.id == selectedProjectId }?.name ?: "Unknown Project")
                                         )
                                     )
                                     

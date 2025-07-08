@@ -16,6 +16,10 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.PendingActions
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,100 +34,190 @@ import androidx.navigation.NavController
 import com.deeksha.avrentertainment.models.Project
 import com.deeksha.avrentertainment.models.NotificationData
 import com.deeksha.avrentertainment.models.NotificationType
+import com.deeksha.avrentertainment.models.UserRole
 import com.deeksha.avrentertainment.repository.NotificationRepository
 import com.deeksha.avrentertainment.repository.AuthRepository
+import com.deeksha.avrentertainment.repository.ExpenseRepository
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextOverflow
 
-// Notification Item Component
+// Enhanced data class for notification summaries
+data class NotificationSummary(
+    val projectId: String,
+    val projectName: String,
+    val count: Int,
+    val type: NotificationType,
+    val lastNotification: NotificationData,
+    val totalAmount: Double = 0.0
+)
+
+// Enhanced Notification Item Component with role-specific icons
 @Composable
-fun NotificationItem(
-    notification: NotificationData,
-    modifier: Modifier = Modifier
+fun EnhancedNotificationItem(
+    summary: NotificationSummary,
+    userRole: UserRole,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
 ) {
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-        shape = RoundedCornerShape(8.dp),
+            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (notification.isRead) 
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            else 
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            containerColor = when (summary.type) {
+                NotificationType.EXPENSE_SUBMITTED, NotificationType.PENDING_APPROVAL_REMINDER -> Color(0xFFE3F2FD)
+                NotificationType.EXPENSE_APPROVED -> Color(0xFFE8F5E8)
+                NotificationType.EXPENSE_REJECTED -> Color(0xFFFFEBEE)
+                NotificationType.BUDGET_EXCEEDED_PROJECT, NotificationType.BUDGET_EXCEEDED_DEPARTMENT -> Color(0xFFFFEBEE)
+                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            }
         ),
-        elevation = CardDefaults.cardElevation(2.dp)
+        elevation = CardDefaults.cardElevation(4.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.weight(1f)
             ) {
-                Text(
-                    text = notification.title,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = if (notification.isRead) FontWeight.Normal else FontWeight.Bold,
-                        fontSize = 13.sp
-                    ),
-                    color = when (notification.type) {
-                        NotificationType.EXPENSE_SUBMITTED -> Color(0xFF2E5CFF)
-                        NotificationType.BUDGET_EXCEEDED_PROJECT, NotificationType.BUDGET_EXCEEDED_DEPARTMENT -> Color(0xFFE53E3E)
-                        NotificationType.PENDING_APPROVAL_REMINDER -> Color(0xFFFF9500)
-                        else -> MaterialTheme.colorScheme.onSurface
+                // Role-specific icon
+                Icon(
+                    imageVector = when (summary.type) {
+                        NotificationType.EXPENSE_SUBMITTED, NotificationType.PENDING_APPROVAL_REMINDER -> Icons.Default.PendingActions
+                        NotificationType.EXPENSE_APPROVED -> Icons.Default.CheckCircle
+                        NotificationType.EXPENSE_REJECTED -> Icons.Default.Cancel
+                        NotificationType.BUDGET_EXCEEDED_PROJECT, NotificationType.BUDGET_EXCEEDED_DEPARTMENT -> Icons.Default.Warning
+                        else -> Icons.Default.Notifications
                     },
-                    modifier = Modifier.weight(1f)
+                    contentDescription = summary.type.name,
+                    tint = when (summary.type) {
+                        NotificationType.EXPENSE_SUBMITTED, NotificationType.PENDING_APPROVAL_REMINDER -> Color(0xFF2196F3)
+                        NotificationType.EXPENSE_APPROVED -> Color(0xFF4CAF50)
+                        NotificationType.EXPENSE_REJECTED -> Color(0xFFE53E3E)
+                        NotificationType.BUDGET_EXCEEDED_PROJECT, NotificationType.BUDGET_EXCEEDED_DEPARTMENT -> Color(0xFFFF9800)
+                        else -> Color.Gray
+                    },
+                    modifier = Modifier.size(24.dp)
                 )
                 
-                // Notification type indicator
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when (notification.type) {
-                                NotificationType.EXPENSE_SUBMITTED -> Color(0xFF2E5CFF)
-                                NotificationType.BUDGET_EXCEEDED_PROJECT, NotificationType.BUDGET_EXCEEDED_DEPARTMENT -> Color(0xFFE53E3E)
-                                NotificationType.PENDING_APPROVAL_REMINDER -> Color(0xFFFF9500)
-                                else -> Color.Gray
+                Spacer(modifier = Modifier.width(12.dp))
+                
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = summary.projectName,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    // Role-specific message
+                    val message = when (userRole) {
+                        UserRole.PRODUCTION_HEAD -> {
+                            when (summary.type) {
+                                NotificationType.EXPENSE_SUBMITTED, NotificationType.PENDING_APPROVAL_REMINDER -> 
+                                    "${summary.count} expenses pending approval"
+                                else -> "${summary.count} notifications"
                             }
+                        }
+                        UserRole.APPROVER -> {
+                            when (summary.type) {
+                                NotificationType.EXPENSE_SUBMITTED, NotificationType.PENDING_APPROVAL_REMINDER -> 
+                                    "${summary.count} expenses awaiting your approval"
+                                else -> "${summary.count} notifications"
+                            }
+                        }
+                        UserRole.USER -> {
+                            when (summary.type) {
+                                NotificationType.EXPENSE_APPROVED -> "${summary.count} expenses approved"
+                                NotificationType.EXPENSE_REJECTED -> "${summary.count} expenses rejected"
+                                else -> "${summary.count} updates"
+                            }
+                        }
+                    }
+                    
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    
+                    // Show total amount for relevant notifications
+                    if (summary.totalAmount > 0) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Total: ₹${String.format("%,.0f", summary.totalAmount)}",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp
+                            ),
+                            color = Color(0xFF2E5CFF)
                         )
-                )
+                    }
+                }
             }
             
-            Spacer(modifier = Modifier.height(4.dp))
-            
-            Text(
-                text = notification.message,
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            // Badge counter
+            if (summary.count > 0) {
+                Badge(
+                    containerColor = when (summary.type) {
+                        NotificationType.EXPENSE_SUBMITTED, NotificationType.PENDING_APPROVAL_REMINDER -> Color(0xFF2196F3)
+                        NotificationType.EXPENSE_APPROVED -> Color(0xFF4CAF50)
+                        NotificationType.EXPENSE_REJECTED -> Color(0xFFE53E3E)
+                        NotificationType.BUDGET_EXCEEDED_PROJECT, NotificationType.BUDGET_EXCEEDED_DEPARTMENT -> Color(0xFFFF9800)
+                        else -> Color.Gray
+                    },
+                    contentColor = Color.White
+                ) {
+                    Text(
+                        text = summary.count.toString(),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
     }
 }
 
-// Notification Panel Component
+// Enhanced Notification Panel with role-specific filtering
 @Composable
-fun NotificationPanel(
-    notifications: List<NotificationData>,
+fun EnhancedNotificationPanel(
+    notifications: List<NotificationSummary>,
+    userRole: UserRole,
     isExpanded: Boolean,
     onToggleExpanded: () -> Unit,
+    onNotificationClick: (NotificationSummary) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(16.dp),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(4.dp)
+        elevation = CardDefaults.cardElevation(6.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -142,16 +236,32 @@ fun NotificationPanel(
                         Icons.Default.Notifications,
                         contentDescription = "Notifications",
                         tint = Color(0xFF4169E1),
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(24.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Pending Notifications",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF4169E1)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    
+                    Column {
+                        Text(
+                            text = when (userRole) {
+                                UserRole.PRODUCTION_HEAD -> "Pending Approvals"
+                                UserRole.APPROVER -> "Approval Requests"
+                                UserRole.USER -> "Expense Updates"
+                            },
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF4169E1)
+                            )
                         )
-                    )
+                        if (notifications.isNotEmpty()) {
+                            Text(
+                                text = "Across ${notifications.size} project${if (notifications.size > 1) "s" else ""}",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = Color.Gray
+                                )
+                            )
+                        }
+                    }
+                    
                     if (notifications.isNotEmpty()) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Badge(
@@ -159,8 +269,9 @@ fun NotificationPanel(
                             contentColor = Color.White
                         ) {
                             Text(
-                                text = notifications.size.toString(),
-                                fontSize = 10.sp
+                                text = notifications.sumOf { it.count }.toString(),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -174,11 +285,15 @@ fun NotificationPanel(
             }
             
             if (isExpanded) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 
                 if (notifications.isEmpty()) {
                     Text(
-                        text = "No pending notifications",
+                        text = when (userRole) {
+                            UserRole.PRODUCTION_HEAD -> "No pending approvals across all projects"
+                            UserRole.APPROVER -> "No approval requests for your projects"
+                            UserRole.USER -> "No expense updates at this time"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.Gray,
                         textAlign = TextAlign.Center,
@@ -186,11 +301,15 @@ fun NotificationPanel(
                     )
                 } else {
                     LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.heightIn(max = 200.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.heightIn(max = 300.dp)
                     ) {
-                        items(notifications) { notification ->
-                            NotificationItem(notification = notification)
+                        items(notifications) { summary ->
+                            EnhancedNotificationItem(
+                                summary = summary,
+                                userRole = userRole,
+                                onClick = { onNotificationClick(summary) }
+                            )
                         }
                     }
                 }
@@ -212,12 +331,13 @@ fun ProjectSelectionScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
-    // Notification states
-    var approverNotifications by remember { mutableStateOf<List<NotificationData>>(emptyList()) }
+    // Enhanced notification states
+    var notificationSummaries by remember { mutableStateOf<List<NotificationSummary>>(emptyList()) }
+    var currentUserRole by remember { mutableStateOf<UserRole?>(null) }
     var isLoadingNotifications by remember { mutableStateOf(true) }
     var isNotificationPanelExpanded by remember { mutableStateOf(false) }
     
-    // Load approver notifications on screen load
+    // Load role-specific notifications
     LaunchedEffect(Unit) {
         scope.launch {
             try {
@@ -226,24 +346,154 @@ fun ProjectSelectionScreen(
                 val currentUserId = authRepository.getCurrentUserPhoneNumber()
                 
                 if (currentUserId != null) {
-                    // Check if current user is an approver/production head
+                    // Get user role
                     authRepository.getUserRole(currentUserId).fold(
                         onSuccess = { userRole ->
-                            if (userRole == com.deeksha.avrentertainment.models.UserRole.APPROVER || 
-                                userRole == com.deeksha.avrentertainment.models.UserRole.PRODUCTION_HEAD) {
+                            currentUserRole = userRole
+                            val notificationRepository = NotificationRepository(context)
+                            val expenseRepository = ExpenseRepository()
+                            
+                            android.util.Log.d("ProjectSelection", "🔍 Loading notifications for $userRole: $currentUserId")
+                            
+                            when (userRole) {
+                                UserRole.PRODUCTION_HEAD -> {
+                                    val pendingExpensesResult = expenseRepository.getPendingExpenses()
+                                    pendingExpensesResult.fold(
+                                        onSuccess = { pendingExpenses ->
+                                            val summaries = pendingExpenses
+                                                .groupBy { it.projectId }
+                                                .map { (projectId, expenses) ->
+                                                    NotificationSummary(
+                                                        projectId = projectId,
+                                                        projectName = expenses.first().projectName,
+                                                        count = expenses.size,
+                                                        type = NotificationType.PENDING_APPROVAL_REMINDER,
+                                                        lastNotification = NotificationData(
+                                                            title = "Pending Approvals",
+                                                            message = "${expenses.size} expenses pending approval",
+                                                            type = NotificationType.PENDING_APPROVAL_REMINDER,
+                                                            projectId = projectId,
+                                                            amount = expenses.sumOf { it.amount ?: 0.0 }
+                                                        ),
+                                                        totalAmount = expenses.sumOf { it.amount ?: 0.0 }
+                                                    )
+                                                }
+                                                .sortedByDescending { it.count }
+                                            notificationSummaries = summaries
+                                            android.util.Log.d("ProjectSelection", "✅ Loaded ${summaries.size} pending approval summaries for Production Head")
+                                        },
+                                        onFailure = { e ->
+                                            android.util.Log.e("ProjectSelection", "❌ Error loading pending expenses: ${e.message}")
+                                        }
+                                    )
+                                }
                                 
-                                val notificationRepository = NotificationRepository(context)
-                                notificationRepository.getApproverNotificationsPreLogin(currentUserId, 10).fold(
-                                    onSuccess = { notifications ->
-                                        approverNotifications = notifications
-                                        android.util.Log.d("ProjectSelection", "✅ Loaded ${notifications.size} approver notifications for $currentUserId")
-                                    },
-                                    onFailure = { e ->
-                                        android.util.Log.e("ProjectSelection", "❌ Error loading notifications: ${e.message}")
-                                    }
-                                )
-                            } else {
-                                android.util.Log.d("ProjectSelection", "Current user is not an approver, skipping notifications")
+                                UserRole.APPROVER -> {
+                                    notificationRepository.getNotificationsForUser(currentUserId, userRole).fold(
+                                        onSuccess = { notifications ->
+                                            val summaries = notifications
+                                                .filter { it.type == NotificationType.EXPENSE_SUBMITTED || it.type == NotificationType.PENDING_APPROVAL_REMINDER }
+                                                .groupBy { it.projectId ?: "unknown" }
+                                                .mapNotNull { (projectId, projectNotifications) ->
+                                                    if (projectId != "unknown") {
+                                                        val projectName = projectNotifications.firstOrNull()?.let { notification ->
+                                                            projects.find { it.id == projectId }?.name ?: "Unknown Project"
+                                                        } ?: "Unknown Project"
+                                                        NotificationSummary(
+                                                            projectId = projectId,
+                                                            projectName = projectName,
+                                                            count = projectNotifications.size,
+                                                            type = NotificationType.EXPENSE_SUBMITTED,
+                                                            lastNotification = projectNotifications.first(),
+                                                            totalAmount = projectNotifications.sumOf { it.amount ?: 0.0 }
+                                                        )
+                                                    } else null
+                                                }
+                                                .sortedByDescending { it.count }
+                                            notificationSummaries = summaries
+                                            android.util.Log.d("ProjectSelection", "✅ Loaded ${summaries.size} approval request summaries for Approver")
+                                        },
+                                        onFailure = { e ->
+                                            android.util.Log.e("ProjectSelection", "❌ Error loading approver notifications: ${e.message}")
+                                        }
+                                    )
+                                }
+                                
+                                UserRole.USER -> {
+                                    android.util.Log.d("ProjectSelection", "🔍 Loading expense status notifications for USER: $currentUserId")
+                                    
+                                    // Debug and ensure notifications exist for this user
+                                    notificationRepository.debugUserNotifications(currentUserId)
+                                    
+                                    notificationRepository.createNotificationsForCurrentUser().fold(
+                                        onSuccess = {
+                                            android.util.Log.d("ProjectSelection", "✅ Notifications ensured for current user")
+                                        },
+                                        onFailure = { e ->
+                                            android.util.Log.e("ProjectSelection", "❌ Failed to ensure notifications: ${e.message}")
+                                        }
+                                    )
+                                    
+                                    // Now load notifications for this user
+                                    notificationRepository.getNotificationsForUser(currentUserId, userRole).fold(
+                                        onSuccess = { notifications ->
+                                            android.util.Log.d("ProjectSelection", "📋 Found ${notifications.size} notifications for USER")
+                                            
+                                            // Filter for only approved and rejected expense notifications
+                                            val relevantNotifications = notifications
+                                                .filter { it.type == NotificationType.EXPENSE_APPROVED || it.type == NotificationType.EXPENSE_REJECTED }
+                                                .also { filtered ->
+                                                    android.util.Log.d("ProjectSelection", "📋 Filtered to ${filtered.size} relevant notifications (approved/rejected)")
+                                                    filtered.forEach { notification ->
+                                                        android.util.Log.d("ProjectSelection", "   - ${notification.title}: ${notification.message}")
+                                                    }
+                                                }
+                                            
+                                            // Group by project
+                                            val summaries = relevantNotifications
+                                                .groupBy { it.projectId ?: "unknown" }
+                                                .mapNotNull { (projectId, projectNotifications) ->
+                                                    if (projectId != "unknown") {
+                                                        val projectName = projectNotifications.firstOrNull()?.let { notification ->
+                                                            projects.find { it.id == projectId }?.name ?: "Unknown Project"
+                                                        } ?: "Unknown Project"
+                                                        
+                                                        android.util.Log.d("ProjectSelection", "📁 Creating summary for project: $projectName (${projectNotifications.size} notifications)")
+                                                        
+                                                        NotificationSummary(
+                                                            projectId = projectId,
+                                                            projectName = projectName,
+                                                            count = projectNotifications.size,
+                                                            type = if (projectNotifications.any { it.type == NotificationType.EXPENSE_APPROVED }) 
+                                                                NotificationType.EXPENSE_APPROVED 
+                                                            else NotificationType.EXPENSE_REJECTED,
+                                                            lastNotification = projectNotifications.first(),
+                                                            totalAmount = projectNotifications.sumOf { it.amount ?: 0.0 }
+                                                        )
+                                                    } else {
+                                                        android.util.Log.w("ProjectSelection", "⚠️ Skipping notification with unknown project ID")
+                                                        null
+                                                    }
+                                                }
+                                                .sortedByDescending { it.count }
+                                            
+                                            notificationSummaries = summaries
+                                            android.util.Log.d("ProjectSelection", "✅ Loaded ${summaries.size} expense update summaries for User")
+                                            
+                                            // Log summary for debugging
+                                            summaries.forEach { summary ->
+                                                android.util.Log.d("ProjectSelection", "   📊 ${summary.projectName}: ${summary.count} notifications, ₹${String.format("%.0f", summary.totalAmount)}")
+                                            }
+                                        },
+                                        onFailure = { e ->
+                                            android.util.Log.e("ProjectSelection", "❌ Error loading user notifications: ${e.message}")
+                                        }
+                                    )
+                                }
+                                else -> {
+                                    // Optionally log or handle unknown role
+                                    notificationSummaries = emptyList()
+                                }
                             }
                         },
                         onFailure = { e ->
@@ -257,6 +507,33 @@ fun ProjectSelectionScreen(
                 android.util.Log.e("ProjectSelection", "❌ Exception loading notifications: ${e.message}")
             } finally {
                 isLoadingNotifications = false
+            }
+        }
+    }
+    
+    // Auto-expand notification panel if there are notifications
+    LaunchedEffect(notificationSummaries) {
+        if (notificationSummaries.isNotEmpty()) {
+            isNotificationPanelExpanded = true
+        }
+    }
+    
+    // Dynamic routing function
+    fun handleNotificationClick(summary: NotificationSummary) {
+        android.util.Log.d("NotificationClick", "🔄 Handling click for ${summary.projectName} (${summary.type})")
+        
+        when (currentUserRole) {
+            UserRole.PRODUCTION_HEAD -> {
+                navController.navigate("production_head_home/${summary.projectId}")
+            }
+            UserRole.APPROVER -> {
+                navController.navigate("production_head_home/${summary.projectId}")
+            }
+            UserRole.USER -> {
+                navController.navigate("project_details/${summary.projectId}")
+            }
+            else -> {
+                navController.navigate("project_details/${summary.projectId}")
             }
         }
     }
@@ -281,7 +558,6 @@ fun ProjectSelectionScreen(
                         )
                     }
                 },
-
                 actions = {
                     IconButton(
                         onClick = { 
@@ -345,12 +621,14 @@ fun ProjectSelectionScreen(
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
-                // Approver Notifications Panel (only show if there are notifications)
-                if (!isLoadingNotifications && approverNotifications.isNotEmpty()) {
-                    NotificationPanel(
-                        notifications = approverNotifications,
+                // Enhanced Notification Panel (always show if there are notifications)
+                if (!isLoadingNotifications && notificationSummaries.isNotEmpty() && currentUserRole != null) {
+                    EnhancedNotificationPanel(
+                        notifications = notificationSummaries,
+                        userRole = currentUserRole!!,
                         isExpanded = isNotificationPanelExpanded,
-                        onToggleExpanded = { isNotificationPanelExpanded = !isNotificationPanelExpanded }
+                        onToggleExpanded = { isNotificationPanelExpanded = !isNotificationPanelExpanded },
+                        onNotificationClick = { summary -> handleNotificationClick(summary) }
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
@@ -823,8 +1101,10 @@ fun ProjectDetailsWithNotificationsScreen(
                                         ) {
                                             items(projectNotifications) { notification ->
                                                 NotificationItem(
-                                                    notification = notification,
-                                                    modifier = Modifier.fillMaxWidth()
+                                                    title = notification.title,
+                                                    description = notification.message,
+                                                    time = notification.createdAt.toDate().toString(),
+                                                    isRead = notification.isRead
                                                 )
                                             }
                                         }

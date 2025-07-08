@@ -310,8 +310,12 @@ class MainActivity : ComponentActivity() {
                             // Additional cleanup: Remove any lingering budget exceeded notifications
                             notificationRepository.performPeriodicNotificationCleanup()
 
-                            // Skip sample notifications to allow only real dynamic notifications
-                            // notificationRepository.createSampleNotifications()
+                            // Create sample notifications for all users to demonstrate the system
+                            android.util.Log.d("Firebase", "Creating sample notifications for all users...")
+                            notificationRepository.ensureAllUsersHaveNotifications()
+                            
+                            // Also create for current user if logged in
+                            notificationRepository.createNotificationsForCurrentUser()
 
                             android.util.Log.d("Firebase", "Successfully initialized default data")
 
@@ -1738,7 +1742,16 @@ fun ProjectSelectionScreen(
                             ) {
                                 items(allProjectNotifications) { notification ->
                                     Card(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                if ((notification.type == NotificationType.EXPENSE_APPROVED ||
+                                                    notification.type == NotificationType.EXPENSE_REJECTED ||
+                                                    notification.type == NotificationType.EXPENSE_SUBMITTED)
+                                                    && !notification.projectId.isNullOrBlank()) {
+                                                    navController.navigate("project_details/${notification.projectId}")
+                                                }
+                                            },
                                         colors = CardDefaults.cardColors(
                                             containerColor = if (notification.isRead) 
                                                 Color(0xFFF8F9FA) 
@@ -2276,7 +2289,16 @@ fun TeamMemberHomeScreen(navController: NavHostController, projectId: String, on
                                     title = notification.title,
                                     description = notification.message,
                                     time = timeAgo,
-                                    isRead = notification.isRead
+                                    isRead = notification.isRead,
+                                    onClick = {
+                                        if ((notification.type == NotificationType.EXPENSE_APPROVED ||
+                                             notification.type == NotificationType.EXPENSE_REJECTED ||
+                                             notification.type == NotificationType.EXPENSE_SUBMITTED)
+                                            && !notification.projectId.isNullOrBlank()) {
+                                            navController.navigate("project_details/${notification.projectId}")
+                                        }
+                                        // else: Optionally show a message to the user
+                                    }
                                 )
                                 
                                 // Add spacing between notifications (except after the last one)
@@ -2874,7 +2896,16 @@ fun ApproverHomeScreen(navController: NavHostController, projectId: String, onBa
                                             title = notification.title,
                                             description = notification.message,
                                             time = timeAgo,
-                                            isRead = notification.isRead
+                                            isRead = notification.isRead,
+                                            onClick = {
+                                                if ((notification.type == NotificationType.EXPENSE_APPROVED ||
+                                                     notification.type == NotificationType.EXPENSE_REJECTED ||
+                                                     notification.type == NotificationType.EXPENSE_SUBMITTED)
+                                                    && !notification.projectId.isNullOrBlank()) {
+                                                    navController.navigate("project_details/${notification.projectId}")
+                                                }
+                                                // else: Optionally show a message to the user
+                                            }
                                         )
                                         
                                         // Add spacing between notifications (except after the last one)
@@ -3325,7 +3356,8 @@ fun NotificationItem(
     title: String,
     description: String,
     time: String,
-    isRead: Boolean = true
+    isRead: Boolean = true,
+    onClick: (() -> Unit)? = null
 ) {
     val backgroundColor = if (isRead) Color.Transparent else Color(0xFFF0F8FF)
     val titleColor = if (isRead) Color(0xFF2E2E2E) else Color(0xFF1565C0)
@@ -3335,6 +3367,7 @@ fun NotificationItem(
             .fillMaxWidth()
             .background(backgroundColor, RoundedCornerShape(4.dp))
             .padding(vertical = 6.dp, horizontal = if (isRead) 0.dp else 8.dp)
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -6436,20 +6469,6 @@ fun ApprovalModalScreen(
                                     fontSize = 16.sp
                                 )
                             }
-                        }
-
-                        // Close Button (X)
-                        Button(
-                            onClick = { navController.popBackStack() },
-                            modifier = Modifier.size(50.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE74C3C)),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Close",
-                                tint = Color.White
-                            )
                         }
 
                         // Reject Button

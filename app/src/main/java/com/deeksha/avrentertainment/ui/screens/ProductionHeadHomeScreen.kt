@@ -111,6 +111,8 @@ fun ProductionHeadHomeScreen(
     var productionHeadNotifications by remember { mutableStateOf<List<NotificationData>>(emptyList()) }
     var refreshTrigger by remember { mutableStateOf(0) }
 
+    var selectedDepartmentForReport by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(projectId) {
         scope.launch {
             try {
@@ -320,13 +322,25 @@ fun ProductionHeadHomeScreen(
                                 refreshTrigger++
                             }
                         }) {
-                            val unreadCount = productionHeadNotifications.count { !it.isRead }
-                            if (unreadCount > 0) {
-                                Badge(containerColor = Color.Red) {
-                                    Text("$unreadCount", color = Color.White, fontSize = 12.sp)
+                            Box {
+                                Icon(
+                                    Icons.Default.Notifications,
+                                    contentDescription = "Notifications",
+                                    tint = Color(0xFF4169E1)
+                                )
+                                val unreadCount = productionHeadNotifications.count { !it.isRead }
+                                if (unreadCount > 0) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = 8.dp, y = (-4).dp)
+                                    ) {
+                                        Badge(containerColor = Color.Red) {
+                                            Text("$unreadCount", color = Color.White, fontSize = 12.sp)
+                                        }
+                                    }
                                 }
                             }
-                            Icon(Icons.Default.Notifications, contentDescription = "Notifications", tint = Color(0xFF4169E1))
                         }
 
                         DropdownMenu(
@@ -514,7 +528,8 @@ fun ProductionHeadHomeScreen(
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Medium,
                                         modifier = Modifier.clickable {
-                                            navController.navigate("reports/$projectId")
+                                            val departmentQuery = selectedDepartmentForReport?.let { "?department=$it" } ?: ""
+                                            navController.navigate("reports/$projectId$departmentQuery")
                                         }
                                     )
                                 }
@@ -598,10 +613,11 @@ fun ProductionHeadHomeScreen(
                                                 color = colors[globalIndex % colors.size],
                                                 modifier = Modifier
                                                     .weight(1f)
-                                                    .height(80.dp),
-                                                onClick = {
-                                                    navController.navigate("department_report/$projectId/$department")
-                                                }
+                                                    .height(80.dp)
+                                                    .clickable {
+                                                        selectedDepartmentForReport = department
+                                                        navController.navigate("reports/$projectId?department=$department")
+                                                    }
                                             )
                                         }
                                         if (rowItems.size == 1) {
